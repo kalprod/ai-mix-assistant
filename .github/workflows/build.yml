@@ -86,7 +86,7 @@ jobs:
               ditto "$OUT/AI Mix Assistant.app" "$ROOT/Applications/AI Mix Assistant.app"
               # Always install to these exact paths (never "relocate" onto an old copy elsewhere).
               pkgbuild --analyze --root "$ROOT" components.plist
-              i=0; while plutil -replace "$i.BundleIsRelocatable" -bool NO components.plist 2>/dev/null; do i=$((i+1)); done
+              i=0; while [ $i -lt 10 ] && plutil -replace "$i.BundleIsRelocatable" -bool NO components.plist 2>/dev/null; do i=$((i+1)); done
               plutil -p components.plist
               mkdir -p scripts
               printf '%s\n' '#!/bin/sh' 'killall -9 AudioComponentRegistrar 2>/dev/null || true' 'exit 0' > scripts/postinstall
