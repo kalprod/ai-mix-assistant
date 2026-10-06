@@ -62,6 +62,14 @@ struct SessionRun
     int blocksProcessed = 0;
 };
 
-SessionRun runSyntheticSession (double seconds, int blockSize = 512, const std::string& busName = {}, int extraTracks = 0);
+struct SessionOptions
+{
+    bool autoRoles = false;    // Listeners report "Auto" and the engine detects roles
+    bool masterOnly = false;   // only the mix-bus instance runs (no Listeners on tracks)
+};
+
+SessionRun runSyntheticSession (double seconds, int blockSize = 512, const std::string& busName = {}, int extraTracks = 0,
+                                SessionOptions options = {},
+                                const std::function<void (const MixEngine&)>& afterTick = {});
 
 } // namespace aimix

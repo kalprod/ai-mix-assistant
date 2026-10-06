@@ -6,7 +6,7 @@ Last run: 2026-10-06, Ubuntu 24.04 container (Intel Xeon 2.1 GHz, 4 vCPU), GCC 1
 
 | Check | Result | Evidence |
 |---|---|---|
-| Core unit tests (ring buffer, shm bus across a real `fork()`, LUFS vs. EBU Tech 3341, masking, M/S, delay, analyser, rules, end-to-end) | 40/40 pass | `validation/unit_tests.txt` |
+| Core unit tests (ring buffer, shm bus across a real `fork()`, LUFS vs. EBU Tech 3341, masking, M/S, delay, analyser, role detection, rules, end-to-end) | 48/48 pass | `validation/unit_tests.txt` |
 | Audio thread allocates nothing (core analyser, 2000 blocks; full JUCE `processBlock`, 3000 random-size blocks) | 0 allocations | `unit_tests.txt`, `plugin_checks.txt` |
 | `processBlock` output bit-identical to input (random sizes 1..2048, seeks, transport start/stop) | pass | `plugin_checks.txt` |
 | Bus layouts: mono and stereo accepted, mono→stereo and 5.1 rejected; zero latency, zero tail | pass | `plugin_checks.txt` |

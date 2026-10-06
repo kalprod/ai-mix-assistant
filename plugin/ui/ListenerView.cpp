@@ -19,6 +19,9 @@ void ListenerView::paint (juce::Graphics& g)
     g.setFont (font (16.0f, true));
     g.drawText (status.masterOnline ? "Streaming to Master Engine" : "Waiting for a Master Engine",
                 c.withTrimmedLeft (18.0f).removeFromTop (20.0f), juce::Justification::centredLeft);
+    g.setColour (colours::accent);
+    g.setFont (font (14.0f, true));
+    g.drawText (status.roleText, c.withHeight (20.0f), juce::Justification::centredRight);
 
     g.setColour (colours::textDim);
     g.setFont (font (12.5f));

@@ -256,6 +256,30 @@ void renderMasterSnapshot (const juce::File& outDir)
     ed->refresh();
     savePng (*editor, outDir.getChildFile ("ui_master_small.png"));
 
+    // Tracks on "Auto": roles detected by the engine; one card shown as resolving.
+    {
+        aimix::SessionOptions options;
+        options.autoRoles = true;
+        auto autoRun = aimix::runSyntheticSession (10.0, 512, {}, 0, options);
+        auto copy = std::make_shared<aimix::MixReport> (*autoRun.engine->getLatestReport());
+        if (copy->suggestions.size() > 1)
+            copy->suggestions[1].resolving = true;
+        editor->setSize (1240, 760);
+        ed->setReportOverride (copy);
+        ed->refresh();
+        savePng (*editor, outDir.getChildFile ("ui_master_auto_roles.png"));
+    }
+
+    // Only the mix-bus instance: what a single plugin on the master shows.
+    {
+        aimix::SessionOptions options;
+        options.masterOnly = true;
+        auto busRun = aimix::runSyntheticSession (10.0, 512, {}, 0, options);
+        ed->setReportOverride (busRun.engine->getLatestReport());
+        ed->refresh();
+        savePng (*editor, outDir.getChildFile ("ui_master_bus_only.png"));
+    }
+
     juce::FileOutputStream json (outDir.getChildFile ("synthetic_session_suggestions.json"));
     json.setPosition (0);
     json.truncate();

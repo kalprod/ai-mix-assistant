@@ -48,7 +48,12 @@ void ChannelStrip::paint (juce::Graphics& g)
                       juce::Justification::centredLeft, 1, 0.8f);
     g.setColour (colours::textDim.withMultipliedAlpha (alpha));
     g.setFont (font (11.0f));
-    g.drawText (data.stale ? juce::String ("no signal") : juce::String (toString (v.role)),
+    const juce::String roleLine = data.stale         ? juce::String ("no signal")
+                                : master             ? juce::String ("Mix bus")
+                                : data.roleDetecting ? juce::String ("Auto: listening...")
+                                : data.autoRole      ? roleText (v.role) + " (auto)"
+                                                     : roleText (v.role);
+    g.drawText (roleLine,
                 inner.withTrimmedTop (26).withHeight (14), juce::Justification::centredLeft);
 
     // issue badge

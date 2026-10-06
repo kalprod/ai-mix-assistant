@@ -64,8 +64,10 @@ void AIMixEditor::updateModeVisibility()
     const bool master = shownMode == AIMixProcessor::Mode::Master;
     masterView.setVisible (master);
     listenerView.setVisible (! master);
-    roleBox.setEnabled (! master);
-    roleLabel.setAlpha (master ? 0.4f : 1.0f);
+    // The mix bus needs no role or track name: hide them rather than asking.
+    for (juce::Component* c : { (juce::Component*) &roleBox, (juce::Component*) &roleLabel,
+                                (juce::Component*) &nameEditor, (juce::Component*) &nameLabel })
+        c->setVisible (! master);
     repaint();
 }
 
@@ -83,6 +85,7 @@ void AIMixEditor::timerCallback()
         const auto& m = processor.getMeters();
         ListenerView::Status s;
         s.trackName = processor.getEffectiveTrackName();
+        s.roleText = processor.getRoleDisplay();
         s.slot = processor.getBusSlot();
         s.sharedMemory = processor.isUsingSharedMemory();
         s.masterOnline = processor.isMasterEngineOnline();

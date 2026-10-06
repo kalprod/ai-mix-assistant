@@ -105,6 +105,17 @@ Suggestion make (std::string ruleId, std::string keySuffix, Category c, Severity
 
 std::string idKey (const TrackView& t) { return std::to_string (t.trackId); }
 
+// Keys of the cards currently on screen, for the duration of one evaluateRaw().
+thread_local const std::unordered_set<std::string>* tShowing = nullptr;
+
+// Threshold hysteresis: `raise` decides whether a new card appears, the looser
+// `keep` decides whether a card already on screen stays. A measurement
+// hovering around one threshold then can't make the card blink.
+float threshold (const char* ruleId, const std::string& keySuffix, float raise, float keep)
+{
+    return tShowing != nullptr && tShowing->count (std::string (ruleId) + ":" + keySuffix) > 0 ? keep : raise;
+}
+
 //==============================================================================
 // GAIN
 void gainRules (const TrackView& t, const MixSnapshot& mix, const RuleConfig& cfg, std::vector<Suggestion>& out)
@@ -115,7 +126,7 @@ void gainRules (const TrackView& t, const MixSnapshot& mix, const RuleConfig& cf
     const float peak = t.maxPeakDb();
     const float rms = t.maxRmsDb();
 
-    if (peak >= cfg.clipPeakDb)
+    if (peak >= threshold ("gain.clipping", idKey (t), cfg.clipPeakDb, cfg.clipPeakDb - 1.0f))
     {
         auto s = make ("gain.clipping", idKey (t), Category::Gain, Severity::Critical, 0.95f, { &t });
         const float trim = -(peak - cfg.masterCeilingDb);
@@ -129,7 +140,7 @@ void gainRules (const TrackView& t, const MixSnapshot& mix, const RuleConfig& cf
         s.action = { ActionType::AdjustGain, t.trackId, trim };
         out.push_back (std::move (s));
     }
-    else if (rms >= cfg.hotRmsDb)
+    else if (rms >= threshold ("gain.hot", idKey (t), cfg.hotRmsDb, cfg.hotRmsDb - 2.0f))
     {
         auto s = make ("gain.hot", idKey (t), Category::Gain, Severity::Warning, 0.8f, { &t });
         const float trim = cfg.targetTrackRmsDb - rms;
@@ -144,7 +155,7 @@ void gainRules (const TrackView& t, const MixSnapshot& mix, const RuleConfig& cf
         out.push_back (std::move (s));
     }
 
-    if (t.shortTermLufs > -70.0f && t.shortTermLufs < cfg.quietShortTermLufs)
+    if (t.shortTermLufs > -70.0f && t.shortTermLufs < threshold ("gain.quiet", idKey (t), cfg.quietShortTermLufs, cfg.quietShortTermLufs + 3.0f))
     {
         auto s = make ("gain.quiet", idKey (t), Category::Gain, Severity::Info, 0.5f, { &t });
         const float boost = cfg.quietShortTermLufs + 15.0f - t.shortTermLufs;
@@ -168,7 +179,7 @@ void masterRules (const TrackView& m, const RuleConfig& cfg, std::vector<Suggest
     if (! m.active)
         return;
 
-    if (m.maxPeakDb() >= cfg.masterCeilingDb)
+    if (m.maxPeakDb() >= threshold ("mix.headroom", "master", cfg.masterCeilingDb, cfg.masterCeilingDb - 0.5f))
     {
         auto s = make ("mix.headroom", "master", Category::Gain, Severity::Warning, 0.85f, { &m });
         const float trim = cfg.masterCeilingDb - 0.5f - m.maxPeakDb();
@@ -182,7 +193,8 @@ void masterRules (const TrackView& m, const RuleConfig& cfg, std::vector<Suggest
         out.push_back (std::move (s));
     }
 
-    if (m.integratedLufs > -70.0f && std::abs (m.integratedLufs - cfg.mixTargetLufs) > cfg.mixTargetToleranceLu)
+    if (m.integratedLufs > -70.0f
+        && std::abs (m.integratedLufs - cfg.mixTargetLufs) > threshold ("mix.loudness", "master", cfg.mixTargetToleranceLu, cfg.mixTargetToleranceLu - 1.0f))
     {
         const float diff = cfg.mixTargetLufs - m.integratedLufs;
         auto s = make ("mix.loudness", "master", Category::Gain, Severity::Info, 0.6f, { &m });
@@ -198,7 +210,7 @@ void masterRules (const TrackView& m, const RuleConfig& cfg, std::vector<Suggest
         out.push_back (std::move (s));
     }
 
-    if (m.numChannels == 2 && m.correlation < 0.3f)
+    if (m.numChannels == 2 && m.correlation < threshold ("mix.mono_compat", "master", 0.3f, 0.4f))
     {
         const bool critical = m.correlation < 0.0f;
         auto s = make ("mix.mono_compat", "master", Category::Phase, critical ? Severity::Critical : Severity::Warning, 0.7f, { &m });
@@ -212,7 +224,7 @@ void masterRules (const TrackView& m, const RuleConfig& cfg, std::vector<Suggest
         out.push_back (std::move (s));
     }
 
-    if (m.numChannels == 2 && m.sideToMidDb > -3.0f)
+    if (m.numChannels == 2 && m.sideToMidDb > threshold ("mix.too_wide", "master", -3.0f, -5.0f))
     {
         auto s = make ("mix.too_wide", "master", Category::Panning, Severity::Warning, 0.6f, { &m });
         s.title = "Mix is very wide";
@@ -235,8 +247,8 @@ void eqTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Sugges
     if (! isLowEndRole (t.role) && t.role != TrackRole::Drums)
     {
         const float lowShare = energyShareBelow (t.bands, 120.0f);
-        const float threshold = t.role == TrackRole::Unknown ? cfg.lowEndShareUnknown : cfg.lowEndShareKnown;
-        if (lowShare > threshold)
+        const float raise = t.role == TrackRole::Unknown ? cfg.lowEndShareUnknown : cfg.lowEndShareKnown;
+        if (lowShare > threshold ("eq.low_end", idKey (t), raise, raise * 0.85f))
         {
             const float hpf = highPassFrequencyFor (t.role);
             auto s = make ("eq.low_end", idKey (t), Category::Eq, lowShare > 0.45f ? Severity::Warning : Severity::Info,
@@ -263,7 +275,8 @@ void eqTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Sugges
     for (int b = 13; b <= 17; ++b)
         if (residual[(size_t) b] > harshExcess) { harshExcess = residual[(size_t) b]; harshBand = b; }
 
-    const float harshThreshold = cfg.harshExcessDb + (t.role == TrackRole::Vocal ? 3.0f : 0.0f);
+    const float harshRaise = cfg.harshExcessDb + (t.role == TrackRole::Vocal ? 3.0f : 0.0f);
+    const float harshThreshold = threshold ("eq.harsh", idKey (t), harshRaise, harshRaise - 2.0f);
     if (harshBand >= 0 && harshExcess > harshThreshold)
     {
         const float harshQ = std::min (4.0f, bandQ (harshBand));
@@ -290,7 +303,9 @@ void stereoTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Su
         return;
 
     const float lowShare = energyShareBelow (t.bands, 150.0f);
-    if (lowShare > 0.3f && t.sideToMidDb > cfg.wideLowEndSideToMidDb && t.correlation >= cfg.correlationWarn)
+    const bool wideShown = threshold ("pan.wide_low_end", idKey (t), 0.0f, 1.0f) > 0.5f;
+    if (lowShare > (wideShown ? 0.25f : 0.3f) && t.sideToMidDb > cfg.wideLowEndSideToMidDb - (wideShown ? 3.0f : 0.0f)
+        && t.correlation >= cfg.correlationWarn)
     {
         auto s = make ("pan.wide_low_end", idKey (t), Category::Panning,
                        isLowEndRole (t.role) ? Severity::Warning : Severity::Info, 0.6f, { &t });
@@ -308,7 +323,7 @@ void stereoTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Su
         out.push_back (std::move (s));
     }
 
-    if (t.correlation < cfg.correlationWarn && t.sideToMidDb > -40.0f)
+    if (t.correlation < threshold ("phase.track_correlation", idKey (t), cfg.correlationWarn, cfg.correlationWarn + 0.1f) && t.sideToMidDb > -40.0f)
     {
         const bool critical = t.correlation < cfg.correlationCritical;
         auto s = make ("phase.track_correlation", idKey (t), Category::Phase,
@@ -344,7 +359,7 @@ void pairRules (const PairView& p, const TrackView& a, const TrackView& b, const
                              && ! (isLowEndRole (a.role) && isLowEndRole (b.role));
 
     // EQ carve
-    if (m.worstBand >= 0 && m.score >= cfg.maskingWarn && ! sameSource && ! lowEndClash)
+    if (m.worstBand >= 0 && m.score >= threshold ("eq.masking", pairKey, cfg.maskingWarn, cfg.maskingWarn - 0.08f) && ! sameSource && ! lowEndClash)
     {
         const int band = m.worstBand;
         const int pa = mixPriority (a.role), pb = mixPriority (b.role);
@@ -374,7 +389,7 @@ void pairRules (const PairView& p, const TrackView& a, const TrackView& b, const
     }
 
     // Pan apart
-    if (m.score >= cfg.maskingPanThreshold && ! sameSource && isPannable (a.role) && isPannable (b.role)
+    if (m.score >= threshold ("pan.separate", pairKey, cfg.maskingPanThreshold, cfg.maskingPanThreshold - 0.08f) && ! sameSource && isPannable (a.role) && isPannable (b.role)
         && a.sideToMidDb < cfg.monoSideToMidDb && b.sideToMidDb < cfg.monoSideToMidDb)
     {
         auto s = make ("pan.separate", pairKey, Category::Panning, Severity::Info, 0.6f, { &a, &b });
@@ -442,55 +457,98 @@ void pairRules (const PairView& p, const TrackView& a, const TrackView& b, const
     }
 }
 
-// Low-mid build-up is a property of the sum, not of any one track (most
-// instruments have their fundamentals there), so it is detected on the mix bus
-// and attributed to the biggest non-bass contributor in that band.
-void mixMudRule (const MixSnapshot& mix, const RuleConfig& cfg, std::vector<Suggestion>& out)
+// Tonal problems of the whole mix, measured on the mix bus against its own
+// spectral tilt. Low-mid build-up in particular is a property of the sum, not
+// of any one track (most instruments have their fundamentals there). When
+// Listeners are present the card names the biggest contributor; with only the
+// Master Engine running, the fix goes on the mix bus.
+struct ToneRegion
+{
+    const char* ruleId;
+    int firstBand, lastBand;
+    float raiseDb;
+    bool skipLowEndRoles;   // kick and bass legitimately own this region
+    const char* problem;    // "muddy"
+    const char* why;
+};
+
+void mixToneRules (const MixSnapshot& mix, const RuleConfig& cfg, std::vector<Suggestion>& out)
 {
     const auto& m = mix.master;
-    if (! m.active)
+    if (! m.active || m.bands.totalPowerDb < -90.0f)
         return;
+
+    const ToneRegion regions[] = {
+        { "eq.mix_mud",   2, 4,  cfg.mudExcessDb,   true,  "muddy",
+          "Low-mid build-up makes a mix sound thick and blurred, and hides the punch of the kick and the clarity of the vocal." },
+        { "eq.mix_harsh", 13, 17, cfg.harshExcessDb, false, "harsh",
+          "The ear is most sensitive here: too much makes a mix tiring to listen to and sound bad on small speakers turned up." },
+    };
 
     const auto residual = spectralResidual (m.bands);
-    int band = -1;
-    float excess = 0.0f;
-    for (int b = 2; b <= 4; ++b)
-        if (residual[(size_t) b] > excess) { excess = residual[(size_t) b]; band = b; }
-    if (band < 0 || excess <= cfg.mudExcessDb)
-        return;
-
-    const TrackView* top = nullptr;
-    const TrackView* second = nullptr;
-    for (const auto& t : mix.tracks)
+    for (const auto& r : regions)
     {
-        if (! t.active || isLowEndRole (t.role))
+        int band = -1;
+        float excess = 0.0f;
+        for (int b = r.firstBand; b <= r.lastBand; ++b)
+            if (residual[(size_t) b] > excess) { excess = residual[(size_t) b]; band = b; }
+        if (band < 0 || excess <= threshold (r.ruleId, "mix", r.raiseDb, r.raiseDb - 2.0f))
             continue;
-        if (top == nullptr || t.bands.powerDb[(size_t) band] > top->bands.powerDb[(size_t) band]) { second = top; top = &t; }
-        else if (second == nullptr || t.bands.powerDb[(size_t) band] > second->bands.powerDb[(size_t) band]) second = &t;
-    }
-    if (top == nullptr)
-        return;
 
-    const float f = bandCentreHz (band);
-    const float cut = -std::min (5.0f, excess - 1.5f);
-    auto s = make ("eq.mix_mud", std::to_string (band), Category::Eq, excess > cfg.mudExcessDb + 4.0f ? Severity::Warning : Severity::Info,
-                   std::min (1.0f, excess / 10.0f), { top });
-    if (second != nullptr)
-    {
-        s.trackIds.push_back (second->trackId);
-        s.trackNames.push_back (second->name);
+        const TrackView* top = nullptr;
+        const TrackView* second = nullptr;
+        for (const auto& t : mix.tracks)
+        {
+            if (! t.active || (r.skipLowEndRoles && isLowEndRole (t.role)))
+                continue;
+            if (top == nullptr || t.bands.powerDb[(size_t) band] > top->bands.powerDb[(size_t) band]) { second = top; top = &t; }
+            else if (second == nullptr || t.bands.powerDb[(size_t) band] > second->bands.powerDb[(size_t) band]) second = &t;
+        }
+
+        const float f = bandCentreHz (band);
+        const float bellQ = std::min (4.0f, bandQ (band));
+        const auto fs = formatFrequency (f);
+        const Severity severity = excess > r.raiseDb + 4.0f ? Severity::Warning : Severity::Info;
+        const float confidence = std::min (1.0f, excess / 10.0f);
+
+        if (top != nullptr)
+        {
+            const float cut = -std::min (5.0f, excess - 1.5f);
+            auto s = make (r.ruleId, "mix", Category::Eq, severity, confidence, { top });
+            if (second != nullptr)
+            {
+                s.trackIds.push_back (second->trackId);
+                s.trackNames.push_back (second->name);
+            }
+            s.title = fmt ("Mix is %s around %s", r.problem, fs.c_str());
+            s.detail = fmt ("The mix bus is %.1f dB above its own tonal balance at %s. The largest contributor%s %s%s%s. %s",
+                            excess, fs.c_str(), second ? "s are" : " is", q (top->name),
+                            second ? " and " : "", second ? q (second->name) : "", r.why);
+            s.steps = {
+                fmt ("On '%s', add a bell at %s, Q %.1f, cutting %.1f dB.", q (top->name), fs.c_str(), bellQ, -cut),
+                second ? fmt ("If the mix still sounds %s, make a smaller cut on '%s' at the same frequency.", r.problem, q (second->name))
+                       : std::string ("Listen to the full mix again and check this card clears."),
+                "Judge it in the full mix, not solo: individual tracks will sound thinner but the mix clearer.",
+            };
+            s.action = { ActionType::EqBell, top->trackId, cut, f, bellQ };
+            out.push_back (std::move (s));
+        }
+        else
+        {
+            // Only the mix bus is analysed: fix it there, gently.
+            const float cut = -std::min (3.0f, std::max (1.0f, (excess - 1.5f) * 0.5f));
+            auto s = make (r.ruleId, "mix", Category::Eq, severity, confidence, { &m });
+            s.title = fmt ("Mix is %s around %s", r.problem, fs.c_str());
+            s.detail = fmt ("The mix is %.1f dB above its own tonal balance at %s. %s", excess, fs.c_str(), r.why);
+            s.steps = {
+                fmt ("On the mix bus, add a bell at %s, Q %.1f, cutting %.1f dB.", fs.c_str(), bellQ, -cut),
+                "Better still, find the instrument causing it: solo tracks while watching this frequency, or add AI Mix Assistant to each track and it will name it.",
+                "Cut on that track instead and remove the mix-bus EQ.",
+            };
+            s.action = { ActionType::EqBell, m.trackId, cut, f, bellQ };
+            out.push_back (std::move (s));
+        }
     }
-    s.title = fmt ("Mix is muddy around %s", formatFrequency (f).c_str());
-    s.detail = fmt ("The mix bus is %.1f dB above its own tonal balance at %s. The largest contributor%s %s%s%s.",
-                    excess, formatFrequency (f).c_str(), second ? "s are" : " is", q (top->name),
-                    second ? " and " : "", second ? q (second->name) : "");
-    s.steps = {
-        fmt ("On '%s', add a wide bell at %s, Q %.1f, cutting %.1f dB.", q (top->name), formatFrequency (f).c_str(), bandQ (band), -cut),
-        second ? fmt ("If the mix is still boxy, make a smaller cut on '%s' at the same frequency.", q (second->name)) : std::string ("Re-check the mix bus spectrum."),
-        "Judge it in the full mix, not solo: individual tracks will sound thinner but the mix clearer.",
-    };
-    s.action = { ActionType::EqBell, top->trackId, cut, f, bandQ (band) };
-    out.push_back (std::move (s));
 }
 
 } // namespace
@@ -516,8 +574,15 @@ int mixPriority (TrackRole role) noexcept
 
 RuleEngine::RuleEngine (RuleConfig c) : config (c) {}
 
-std::vector<Suggestion> RuleEngine::evaluateRaw (const MixSnapshot& mix, const RuleConfig& cfg)
+std::vector<Suggestion> RuleEngine::evaluateRaw (const MixSnapshot& mix, const RuleConfig& cfg,
+                                                 const std::unordered_set<std::string>& showing)
 {
+    struct ShowingScope
+    {
+        explicit ShowingScope (const std::unordered_set<std::string>* s) { tShowing = s; }
+        ~ShowingScope() { tShowing = nullptr; }
+    } scope (&showing);
+
     std::vector<Suggestion> out;
     std::unordered_map<uint32_t, const TrackView*> byId;
     for (const auto& t : mix.tracks)
@@ -540,15 +605,44 @@ std::vector<Suggestion> RuleEngine::evaluateRaw (const MixSnapshot& mix, const R
     if (mix.hasMaster)
     {
         masterRules (mix.master, cfg, out);
-        mixMudRule (mix, cfg, out);
+        mixToneRules (mix, cfg, out);
     }
 
     return out;
 }
 
+namespace
+{
+// Is any track this card is about playing right now? Tracks that left the
+// session (plugin removed or bypassed) count as playing, so their cards can
+// clear; tracks that are present but silent freeze their cards.
+bool isPlaying (const Suggestion& s, const MixSnapshot& mix)
+{
+    if (s.trackIds.empty())
+        return true;
+    for (auto id : s.trackIds)
+    {
+        if (mix.hasMaster && mix.master.trackId == id)
+        {
+            if (mix.master.active) return true;
+            continue;
+        }
+        auto it = std::find_if (mix.tracks.begin(), mix.tracks.end(), [id] (const TrackView& t) { return t.trackId == id; });
+        if (it == mix.tracks.end() || it->active)
+            return true;
+    }
+    return false;
+}
+}
+
 std::vector<Suggestion> RuleEngine::evaluate (const MixSnapshot& snapshot)
 {
-    auto raw = evaluateRaw (snapshot, config);
+    std::unordered_set<std::string> showing;
+    for (const auto& [key, tr] : trackers)
+        if (tr.visible)
+            showing.insert (key);
+
+    auto raw = evaluateRaw (snapshot, config, showing);
 
     std::unordered_set<std::string> seen;
     for (auto& s : raw)
@@ -556,7 +650,7 @@ std::vector<Suggestion> RuleEngine::evaluate (const MixSnapshot& snapshot)
         seen.insert (s.key);
         auto& tr = trackers[s.key];
         tr.latest = std::move (s);
-        tr.hits++;
+        tr.hits = std::min (tr.hits + 1, config.debounceTicks);
         tr.misses = 0;
         if (tr.hits >= config.debounceTicks)
             tr.visible = true;
@@ -568,25 +662,43 @@ std::vector<Suggestion> RuleEngine::evaluate (const MixSnapshot& snapshot)
         auto& tr = it->second;
         if (seen.count (it->first) == 0)
         {
-            tr.hits = 0;
-            if (++tr.misses > config.holdTicks)
+            if (! tr.visible)
             {
-                it = trackers.erase (it);
-                continue;
+                // Not shown yet: an occasional miss slows the count down,
+                // a run of misses forgets it.
+                tr.hits = std::max (0, tr.hits - 1);
+                if (++tr.misses > config.holdTicks)
+                {
+                    it = trackers.erase (it);
+                    continue;
+                }
             }
+            else if (isPlaying (tr.latest, snapshot))
+            {
+                if (++tr.misses > config.clearTicks)
+                {
+                    it = trackers.erase (it);
+                    continue;
+                }
+            }
+            // else: the tracks are silent, so the card is frozen as it is.
         }
+
         if (tr.visible && dismissed.count (it->first) == 0)
         {
             tr.latest.ageTicks = ++tr.age;
+            tr.latest.resolving = tr.misses >= config.resolvingTicks;
             out.push_back (tr.latest);
         }
         ++it;
     }
 
+    // Stable order: cards never jump around because a confidence wobbled.
+    // Resolving cards sink to the bottom of their severity group.
     std::sort (out.begin(), out.end(), [] (const Suggestion& x, const Suggestion& y)
     {
-        if (x.severity != y.severity)     return x.severity > y.severity;
-        if (x.confidence != y.confidence) return x.confidence > y.confidence;
+        if (x.severity != y.severity)   return x.severity > y.severity;
+        if (x.resolving != y.resolving) return ! x.resolving;
         return x.key < y.key;
     });
     return out;

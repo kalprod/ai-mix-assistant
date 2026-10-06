@@ -42,7 +42,8 @@ struct Suggestion
     std::string detail;            // why: the measurement that triggered it
     std::vector<std::string> steps;// step-by-step guidance
     SuggestedAction action;        // machine-readable primary action
-    int ageTicks = 0;              // how long it has been continuously present
+    int ageTicks = 0;              // how long it has been shown
+    bool resolving = false;        // condition no longer measured; kept briefly to confirm the fix
 };
 
 const char* toString (Severity) noexcept;

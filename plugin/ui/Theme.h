@@ -47,6 +47,13 @@ inline juce::String severityLabel (Severity s)
     return "INFO";
 }
 
+// "Unknown" is shown as "Instrument": the detector uses it for anything that
+// isn't drums, bass or a vocal.
+inline juce::String roleText (TrackRole r)
+{
+    return r == TrackRole::Unknown ? juce::String ("Instrument") : juce::String (toString (r));
+}
+
 inline juce::String categoryLabel (Category c)
 {
     switch (c)

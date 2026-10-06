@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <chrono>
 #include <fstream>
+#include <map>
+#include <set>
 #include <thread>
 
 using namespace aimix;
@@ -83,4 +85,65 @@ TEST_CASE ("e2e: engine thread runs and publishes reports")
     engine->stop();
     CHECK (engine->getLatestReport()->tick >= 3);
     CHECK (engine->ownsBus());
+}
+
+TEST_CASE ("e2e: Auto role tracks are detected by the master engine and reported back to the Listener")
+{
+    SessionOptions options;
+    options.autoRoles = true;
+    auto run = runSyntheticSession (8.0, 512, {}, 0, options);
+    auto report = run.engine->getLatestReport();
+    REQUIRE (report != nullptr);
+
+    auto roleOf = [&] (const std::string& name) -> const TrackSummary*
+    {
+        for (auto& t : report->tracks)
+            if (t.view.name == name) return &t;
+        return nullptr;
+    };
+    for (const auto& [name, expected] : std::vector<std::pair<std::string, TrackRole>> {
+             { "Kick", TrackRole::Kick }, { "Bass", TrackRole::Bass }, { "OH", TrackRole::Drums } })
+    {
+        auto* t = roleOf (name);
+        REQUIRE (t != nullptr);
+        CHECK (t->autoRole);
+        CHECK (! t->roleDetecting);
+        CHECK (t->view.role == expected);
+
+        // The Listener can read the guess from its bus slot.
+        const auto slotValue = run.bus->slot ((int) t->view.trackId).detectedRole.load();
+        CHECK ((slotValue & kDetectedRoleValid) != 0);
+        CHECK ((TrackRole) (slotValue & 0xff) == expected);
+    }
+}
+
+TEST_CASE ("e2e: master bus only gives steady, useful cards on a full mix")
+{
+    SessionOptions options;
+    options.masterOnly = true;
+    std::map<std::string, int> changes;
+    std::set<std::string> last;
+    auto run = runSyntheticSession (20.0, 512, {}, 0, options, [&] (const MixEngine& engine)
+    {
+        std::set<std::string> now;
+        for (auto& s : engine.getLatestReport()->suggestions)
+            now.insert (s.key);
+        for (auto& k : now)  if (! last.count (k)) changes[k]++;
+        for (auto& k : last) if (! now.count (k))  changes[k]++;
+        last = now;
+    });
+
+    auto report = run.engine->getLatestReport();
+    CHECK (report->tracks.empty());
+    CHECK (report->hasMaster);
+    CHECK (! report->suggestions.empty());
+    std::printf ("    %zu cards from the mix bus alone:\n", report->suggestions.size());
+    for (auto& s : report->suggestions)
+        std::printf ("      %-18s %s  ->  %s\n", s.ruleId.c_str(), s.title.c_str(), describeAction (s.action).c_str());
+
+    for (auto& [key, n] : changes)
+    {
+        if (n > 1) std::printf ("      %s appeared/disappeared %d times\n", key.c_str(), n);
+        CHECK (n == 1);   // each card appears once and stays
+    }
 }

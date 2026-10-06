@@ -9,6 +9,7 @@
 //   4. run the rule engine, publish an immutable MixReport for the UI
 
 #include "DelayEstimator.h"
+#include "RoleClassifier.h"
 #include "RuleEngine.h"
 #include "SharedBus.h"
 
@@ -30,6 +31,8 @@ struct TrackSummary
     std::array<float, kDisplaySpectrumPoints> displaySpectrumDb {};   // log-spaced 20 Hz .. 20 kHz
     uint32_t droppedFrames = 0;
     bool stale = false;                                              // no frames recently (bypassed / removed)
+    bool autoRole = false;                                           // role was detected, not chosen by the user
+    bool roleDetecting = false;                                      // auto role: not enough signal heard yet
 };
 
 struct MixReport
@@ -79,6 +82,8 @@ private:
         uint64_t lastSignalMs = 0;
         uint64_t peakHoldMs[2] {};
         TrackView view;
+        TrackRole chosenRole = TrackRole::Unknown;   // as set on the Listener; Unknown = Auto
+        RoleClassifier classifier;
         double meanSquare[2] {};
         double midEnergy = 0.0, sideEnergy = 0.0;
         std::array<float, kNumFftBins> analysisPower {}, displayPower {};

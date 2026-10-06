@@ -27,6 +27,22 @@ DiagnosticCard::DiagnosticCard (const Suggestion& s) : suggestion (s)
     dismissButton.setColour (juce::TextButton::textColourOffId, colours::textDim);
     dismissButton.onClick = [this] { if (onDismiss) onDismiss (suggestion.key); };
     addAndMakeVisible (dismissButton);
+    lastTextUpdateMs = juce::Time::getMillisecondCounter();
+}
+
+void DiagnosticCard::update (const Suggestion& s)
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    const bool stateChanged = s.severity != suggestion.severity || s.resolving != suggestion.resolving;
+    const bool textDue = now - lastTextUpdateMs >= 1000
+                         && (s.title != suggestion.title || s.detail != suggestion.detail || s.steps != suggestion.steps
+                             || s.trackNames != suggestion.trackNames || describeAction (s.action) != describeAction (suggestion.action));
+    if (! stateChanged && ! textDue)
+        return;
+    if (textDue)
+        lastTextUpdateMs = now;
+    suggestion = s;
+    repaint();
 }
 
 DiagnosticCard::Layout DiagnosticCard::computeLayout (float width) const
@@ -73,7 +89,8 @@ void DiagnosticCard::paint (juce::Graphics& g)
 {
     const auto l = computeLayout ((float) getWidth());
     auto bounds = getLocalBounds().toFloat().reduced (0.5f);
-    const auto sev = severityColour (suggestion.severity);
+    const bool resolving = suggestion.resolving;
+    const auto sev = resolving ? colours::meterGreen : severityColour (suggestion.severity);
 
     g.setColour (colours::panel);
     g.fillRoundedRectangle (bounds, 8.0f);
@@ -87,7 +104,7 @@ void DiagnosticCard::paint (juce::Graphics& g)
     // header: severity badge, category chip, confidence
     auto header = l.header;
     {
-        const auto label = severityLabel (suggestion.severity);
+        const auto label = resolving ? juce::String ("LOOKS FIXED") : severityLabel (suggestion.severity);
         const auto f = font (10.5f, true);
         const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 16.0f;
         auto badge = header.removeFromLeft (bw);
@@ -113,7 +130,8 @@ void DiagnosticCard::paint (juce::Graphics& g)
     header.removeFromLeft (10.0f);
     g.setColour (colours::textFaint);
     g.setFont (smallFont());
-    g.drawText ("confidence " + juce::String (juce::roundToInt (suggestion.confidence * 100.0f)) + "%",
+    g.drawText (resolving ? juce::String ("checking it stays fixed...")
+                          : "confidence " + juce::String (juce::roundToInt (suggestion.confidence * 100.0f)) + "%",
                 header.withTrimmedRight (72.0f), juce::Justification::centredLeft);
 
     drawWrapped (g, suggestion.title, titleFont(), colours::text, l.title);
@@ -153,6 +171,12 @@ void DiagnosticCard::paint (juce::Graphics& g)
         g.drawText (juce::String ((int) i + 1), dot, juce::Justification::centred);
         drawWrapped (g, suggestion.steps[i], bodyFont(), colours::text, r.withTrimmedLeft (kStepIndent).withTrimmedTop (1.0f));
     }
+
+    if (resolving)
+    {
+        g.setColour (colours::panel.withAlpha (0.45f));   // fade the card while the fix is confirmed
+        g.fillRoundedRectangle (bounds.withTrimmedTop (l.title.getY() - 4.0f), 8.0f);
+    }
 }
 
 //==============================================================================
@@ -183,7 +207,7 @@ DiagnosticPanel::DiagnosticPanel()
     viewport.setScrollBarThickness (8);
     addAndMakeVisible (viewport);
 
-    emptyLabel.setText ("No issues detected. Play the session with the Listener on each track.", juce::dontSendNotification);
+    emptyLabel.setText ("No issues detected yet. Press play: advice appears after a moment and stays until the problem is fixed.", juce::dontSendNotification);
     emptyLabel.setColour (juce::Label::textColourId, colours::textFaint);
     emptyLabel.setJustificationType (juce::Justification::centred);
     content.addChildComponent (emptyLabel);
@@ -200,17 +224,8 @@ bool DiagnosticPanel::passesFilter (const Suggestion& s) const
 
 void DiagnosticPanel::setSuggestions (const std::vector<Suggestion>& list)
 {
-    // Rebuild only when the visible content actually changed, so the list
-    // does not jump around while the user is reading it.
-    std::string sig;
-    for (const auto& s : list)
-        sig += s.key + '|' + s.title + '|' + s.detail.substr (0, 24) + '|' + std::to_string ((int) s.severity) + ';';
-    if (sig == signature)
-        return;
-    signature = std::move (sig);
     all = list;
     rebuild();
-    repaint();
 }
 
 void DiagnosticPanel::setTrackFilter (int64_t trackId)
@@ -221,11 +236,27 @@ void DiagnosticPanel::setTrackFilter (int64_t trackId)
 
 void DiagnosticPanel::rebuild()
 {
-    cards.clear();
+    // Cards are kept by key and updated in place: a card that stays on screen
+    // is never destroyed and re-created, so nothing blinks or loses its place.
+    std::map<std::string, std::unique_ptr<DiagnosticCard>> existing;
+    while (! cards.isEmpty())
+    {
+        std::unique_ptr<DiagnosticCard> c (cards.removeAndReturn (0));
+        existing[c->getSuggestion().key] = std::move (c);
+    }
+
     for (const auto& s : all)
     {
         if (! passesFilter (s))
             continue;
+        auto it = existing.find (s.key);
+        if (it != existing.end())
+        {
+            it->second->update (s);
+            cards.add (it->second.release());
+            existing.erase (it);
+            continue;
+        }
         auto* card = cards.add (new DiagnosticCard (s));
         card->onDismiss = [this] (const std::string& key) { if (onDismiss) onDismiss (key); };
         content.addAndMakeVisible (card);

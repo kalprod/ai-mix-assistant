@@ -33,13 +33,17 @@ namespace aimix
 constexpr int      kMaxBusSlots          = 64;
 constexpr uint32_t kSlotRingCapacity     = 8;          // ~350 ms of frames @ 48 kHz
 constexpr uint32_t kBusMagic             = 0x58'4D'49'41; // "AIMX"
-constexpr uint32_t kBusLayoutVersion     = 1;
+constexpr uint32_t kBusLayoutVersion     = 2;
 constexpr uint64_t kMasterTimeoutMs      = 3000;       // master considered gone after this
-constexpr const char* kDefaultBusName    = "aimix_bus_v1";
+constexpr const char* kDefaultBusName    = "aimix_bus_v2";
 
 static_assert (std::atomic<uint64_t>::is_always_lock_free, "64-bit atomics must be lock-free for shared memory");
 
 enum class SlotState : uint32_t { Free = 0, Claiming = 1, Active = 2 };
+
+// BusSlot::detectedRole: the Master Engine's guess of what an "Auto" track is,
+// so the Listener can show it. Zero means "still listening".
+constexpr uint32_t kDetectedRoleValid = 0x100;
 
 struct alignas (64) BusSlot
 {
@@ -48,6 +52,7 @@ struct alignas (64) BusSlot
     std::atomic<uint32_t> ownerPid;       // for dead-owner reclamation with the shm backend
     std::atomic<uint32_t> droppedFrames;  // producer-side overflow counter
     std::atomic<uint64_t> heartbeatMs;    // last time the producer ran its process block
+    std::atomic<uint32_t> detectedRole;   // written by the Master Engine: kDetectedRoleValid | TrackRole
     SpscRingBuffer<AnalysisPayload, kSlotRingCapacity> ring;
 };
 

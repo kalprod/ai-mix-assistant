@@ -4,6 +4,7 @@
 #include "aimix/MixEngine.h"
 
 #include <functional>
+#include <map>
 #include <optional>
 
 namespace aimix::ui
@@ -17,6 +18,11 @@ public:
 
     int getHeightForWidth (int width) const;
     const Suggestion& getSuggestion() const noexcept { return suggestion; }
+
+    // Updates the card in place. Measured values in the text refresh at most
+    // once a second so the numbers stay readable; severity and the
+    // "looks fixed" state update immediately.
+    void update (const Suggestion& s);
 
     std::function<void (const std::string&)> onDismiss;
 
@@ -33,6 +39,7 @@ private:
     Layout computeLayout (float width) const;
 
     Suggestion suggestion;
+    juce::uint32 lastTextUpdateMs = 0;
     juce::TextButton dismissButton { "Dismiss" };
 };
 
@@ -55,7 +62,6 @@ private:
     bool passesFilter (const Suggestion& s) const;
 
     std::vector<Suggestion> all;
-    std::string signature;
     std::optional<Category> categoryFilter;
     int64_t trackFilter = -1;
 

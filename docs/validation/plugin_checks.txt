@@ -21,5 +21,7 @@
 [PASS] wrote ui_listener.png
 [PASS] wrote ui_master.png
 [PASS] wrote ui_master_small.png
+[PASS] wrote ui_master_auto_roles.png
+[PASS] wrote ui_master_bus_only.png
 
 ALL PLUGIN CHECKS PASSED (0 failed)

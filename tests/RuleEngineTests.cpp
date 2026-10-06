@@ -165,33 +165,118 @@ TEST_CASE ("rules: inactive tracks produce nothing")
     CHECK (RuleEngine::evaluateRaw (mix, {}).empty());
 }
 
-TEST_CASE ("rules: debounce, hold and dismissal")
+TEST_CASE ("rules: cards stay until the problem is fixed, freeze in silence, then clear")
 {
     RuleConfig cfg;
     cfg.debounceTicks = 3;
-    cfg.holdTicks = 2;
+    cfg.resolvingTicks = 2;
+    cfg.clearTicks = 4;
     RuleEngine engine (cfg);
 
     MixSnapshot bad;
     auto t = track (1, "Synth", TrackRole::Synth);
     t.peakDb[0] = 1.0f;
     bad.tracks.push_back (t);
-    MixSnapshot good;
-    good.tracks.push_back (track (1, "Synth", TrackRole::Synth));
+    MixSnapshot fixed;
+    fixed.tracks.push_back (track (1, "Synth", TrackRole::Synth));
+    MixSnapshot silent = fixed;
+    silent.tracks[0].active = false;
 
     CHECK (engine.evaluate (bad).empty());
     CHECK (engine.evaluate (bad).empty());
-    CHECK (engine.evaluate (bad).size() == 1);           // shown on 3rd consecutive hit
-    CHECK (engine.evaluate (good).size() == 1);          // held
-    CHECK (engine.evaluate (good).size() == 1);
-    CHECK (engine.evaluate (good).empty());              // released after hold
+    auto shown = engine.evaluate (bad);                  // shown on the 3rd hit
+    REQUIRE (shown.size() == 1);
+    CHECK (! shown[0].resolving);
+
+    shown = engine.evaluate (fixed);                     // 1 tick without the condition
+    REQUIRE (shown.size() == 1);
+    CHECK (! shown[0].resolving);
+    shown = engine.evaluate (fixed);                     // 2 ticks: "looks fixed"
+    REQUIRE (shown.size() == 1);
+    CHECK (shown[0].resolving);
+
+    for (int i = 0; i < 100; ++i)                        // transport stopped: frozen, not cleared
+        CHECK (engine.evaluate (silent).size() == 1);
+
+    CHECK (engine.evaluate (fixed).size() == 1);         // 3
+    CHECK (engine.evaluate (fixed).size() == 1);         // 4
+    CHECK (engine.evaluate (fixed).empty());             // gone after clearTicks of playback
 
     for (int i = 0; i < 3; ++i) engine.evaluate (bad);
-    auto shown = engine.evaluate (bad);
+    shown = engine.evaluate (bad);
     REQUIRE (shown.size() == 1);
     CHECK (shown[0].ageTicks >= 2);
     engine.dismiss (shown[0].key);
     CHECK (engine.evaluate (bad).empty());
+}
+
+TEST_CASE ("rules: an intermittent condition shows one steady card instead of blinking")
+{
+    RuleEngine engine;   // default timing
+    MixSnapshot bad, fixed;
+    auto t = track (1, "Synth", TrackRole::Synth);
+    t.peakDb[0] = 1.0f;
+    bad.tracks.push_back (t);
+    fixed.tracks.push_back (track (1, "Synth", TrackRole::Synth));
+
+    int changes = 0;
+    bool wasShown = false;
+    for (int i = 0; i < 300; ++i)
+    {
+        // present in 2 of every 3 ticks, like a peak that only some hits reach
+        const bool shownNow = ! engine.evaluate (i % 3 == 2 ? fixed : bad).empty();
+        if (shownNow != wasShown) ++changes;
+        wasShown = shownNow;
+    }
+    CHECK (wasShown);
+    CHECK (changes == 1);   // appeared once, never disappeared
+}
+
+TEST_CASE ("rules: a measurement hovering at a threshold doesn't toggle its card")
+{
+    RuleConfig cfg;
+    cfg.debounceTicks = 1;
+    cfg.clearTicks = 1;
+    RuleEngine engine (cfg);
+
+    MixSnapshot mix;
+    mix.hasMaster = true;
+    mix.master = track (9, "Mix Bus", TrackRole::MasterBus);
+    mix.master.correlation = 0.25f;                       // below the 0.3 trigger
+    REQUIRE (find (engine.evaluate (mix), "mix.mono_compat") != nullptr);
+
+    for (int i = 0; i < 50; ++i)
+    {
+        mix.master.correlation = (i % 2) ? 0.29f : 0.36f; // wobbling around 0.3
+        CHECK (find (engine.evaluate (mix), "mix.mono_compat") != nullptr);
+    }
+    mix.master.correlation = 0.6f;                        // really fixed
+    engine.evaluate (mix);
+    engine.evaluate (mix);
+    CHECK (find (engine.evaluate (mix), "mix.mono_compat") == nullptr);
+}
+
+TEST_CASE ("rules: with only the mix bus, tonal problems are fixed on the mix bus")
+{
+    MixSnapshot mix;
+    mix.hasMaster = true;
+    mix.master = track (9, "Mix Bus", TrackRole::MasterBus);
+    mix.master.bands.powerDb[3] += 12.0f;                 // ~350 Hz build-up
+    auto out = RuleEngine::evaluateRaw (mix, {});
+    auto* s = find (out, "eq.mix_mud");
+    REQUIRE (s != nullptr);
+    CHECK (s->action.type == ActionType::EqBell);
+    CHECK (s->action.trackId == 9);                       // on the mix bus itself
+    CHECK (s->action.gainDb < 0.0f && s->action.gainDb >= -3.0f);
+    CHECK (s->key == "eq.mix_mud:mix");                   // stable key whatever the band
+
+    // With Listeners present the same problem is pinned on a track.
+    mix.tracks.push_back (track (1, "Keys", TrackRole::Keys));
+    mix.tracks[0].bands.powerDb[3] += 10.0f;
+    out = RuleEngine::evaluateRaw (mix, {});
+    s = find (out, "eq.mix_mud");
+    REQUIRE (s != nullptr);
+    CHECK (s->action.trackId == 1);
 }
 
 TEST_CASE ("rules: results sorted by severity, JSON output escapes names")

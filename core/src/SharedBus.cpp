@@ -242,6 +242,7 @@ int SharedBus::claimSlot (uint64_t nowMs)
     {
         s.ring.reset();
         s.droppedFrames.store (0, std::memory_order_relaxed);
+        s.detectedRole.store (0, std::memory_order_relaxed);
         s.ownerPid.store (pid, std::memory_order_relaxed);
         s.heartbeatMs.store (nowMs, std::memory_order_relaxed);
         s.generation.fetch_add (1, std::memory_order_relaxed);

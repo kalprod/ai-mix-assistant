@@ -19,7 +19,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 juce::StringArray AIMixProcessor::roleNames()
 {
     juce::StringArray names;
-    for (int r = 0; r < (int) aimix::TrackRole::MasterBus; ++r)
+    // Index 0 (TrackRole::Unknown on the bus) means "detect it for me".
+    names.add ("Auto");
+    for (int r = 1; r < (int) aimix::TrackRole::MasterBus; ++r)
         names.add (aimix::toString ((aimix::TrackRole) r));
     return names;
 }
@@ -162,6 +164,19 @@ juce::String AIMixProcessor::getEffectiveTrackName() const
     if (getMode() == Mode::Master)      return "Mix Bus";
     if (hostTrackName.isNotEmpty())     return hostTrackName;
     return "Track " + juce::String (getBusSlot() + 1);
+}
+
+juce::String AIMixProcessor::getRoleDisplay() const
+{
+    const auto chosen = (aimix::TrackRole) juce::roundToInt (roleParam->load());
+    if (chosen != aimix::TrackRole::Unknown)
+        return aimix::toString (chosen);
+
+    const int slot = getBusSlot();
+    const auto detected = slot >= 0 && bus != nullptr ? bus->slot (slot).detectedRole.load (std::memory_order_relaxed) : 0u;
+    if ((detected & aimix::kDetectedRoleValid) != 0)
+        return aimix::ui::roleText ((aimix::TrackRole) (detected & 0xffu)) + " (detected)";
+    return isMasterEngineOnline() ? "Auto: listening..." : "Auto";
 }
 
 void AIMixProcessor::setTrackNameOverride (const juce::String& name)

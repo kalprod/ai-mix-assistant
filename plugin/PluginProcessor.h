@@ -68,6 +68,7 @@ public:
     void dismissSuggestion (const std::string& key);
 
     juce::String getEffectiveTrackName() const;
+    juce::String getRoleDisplay() const;   // chosen role, or what the Master Engine detected for "Auto"
     void setTrackNameOverride (const juce::String& name);
     juce::String getTrackNameOverride() const { return trackNameOverride; }
 

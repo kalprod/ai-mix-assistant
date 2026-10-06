@@ -28,6 +28,7 @@ add_library (aimix_core STATIC
     core/src/StereoAnalysis.cpp
     core/src/DelayEstimator.cpp
     core/src/TrackAnalyzer.cpp
+    core/src/RoleClassifier.cpp
     core/src/Suggestion.cpp
     core/src/RuleEngine.cpp
     core/src/MixEngine.cpp
@@ -54,6 +55,7 @@ if (AIMIX_BUILD_TESTS)
         tests/DspTests.cpp
         tests/AnalyzerTests.cpp
         tests/RuleEngineTests.cpp
+        tests/RoleClassifierTests.cpp
         tests/EndToEndTests.cpp)
     target_link_libraries (aimix_tests PRIVATE aimix_core)
     add_test (NAME aimix_tests COMMAND aimix_tests)

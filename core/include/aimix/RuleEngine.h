@@ -3,10 +3,17 @@
 // Heuristic rule system: analysis data in, actionable mixing suggestions out.
 //
 // Each rule is a pure function of a MixSnapshot (smoothed per-track and
-// per-pair measurements). RuleEngine::evaluate() adds temporal hysteresis so a
-// suggestion must persist for `debounceTicks` before it is shown and lingers
-// for `holdTicks` after its condition clears, which stops cards flickering on
-// transient material.
+// per-pair measurements). RuleEngine::evaluate() makes cards stable enough to
+// act on:
+//   * a condition must be seen for `debounceTicks` before its card appears
+//     (occasional misses only slow it down, they don't restart the count);
+//   * once shown, a card stays until the condition has been gone for
+//     `clearTicks` of actual playback. After `resolvingTicks` it is marked
+//     "resolving" so the UI can show that the fix is being confirmed;
+//   * while the tracks a card is about are silent (transport stopped, a gap
+//     in the arrangement) the card is frozen: silence is not a fix;
+//   * rules use a looser threshold to clear a card than to raise it, so a
+//     measurement hovering at a threshold doesn't toggle the card.
 
 #include "AnalysisPayload.h"
 #include "SpectralAnalysis.h"
@@ -84,9 +91,11 @@ struct RuleConfig
     float correlationCritical = -0.40f;
     float minDelayCorrelation = 0.50f;
     float minDelaySamples   = 1.0f;
-    // hysteresis
-    int debounceTicks = 3;
-    int holdTicks = 10;
+    // hysteresis (ticks are ~66 ms: the Master Engine runs at ~15 Hz)
+    int debounceTicks = 4;     // ~0.25 s of a condition before its card appears
+    int holdTicks = 10;        // a not-yet-shown condition is forgotten after this many misses
+    int resolvingTicks = 15;   // ~1 s without the condition: card shows "looks fixed"
+    int clearTicks = 45;       // ~3 s of playback without the condition: card removed
 };
 
 class RuleEngine
@@ -98,7 +107,10 @@ public:
     std::vector<Suggestion> evaluate (const MixSnapshot& snapshot);
 
     // Stateless evaluation of every rule (used by evaluate() and tests).
-    static std::vector<Suggestion> evaluateRaw (const MixSnapshot& snapshot, const RuleConfig& config);
+    // `showing` holds the keys of cards already on screen: their rules clear
+    // at a looser threshold than they trigger at.
+    static std::vector<Suggestion> evaluateRaw (const MixSnapshot& snapshot, const RuleConfig& config,
+                                                const std::unordered_set<std::string>& showing = {});
 
     void dismiss (const std::string& key) { dismissed.insert (key); }
     void clearDismissed()                 { dismissed.clear(); }

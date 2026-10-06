@@ -164,7 +164,8 @@ SyntheticSession::SyntheticSession (double fs) : sampleRate (fs)
 }
 
 //==============================================================================
-SessionRun runSyntheticSession (double seconds, int blockSize, const std::string& busNameIn, int extraTracks)
+SessionRun runSyntheticSession (double seconds, int blockSize, const std::string& busNameIn, int extraTracks,
+                                SessionOptions options, const std::function<void (const MixEngine&)>& afterTick)
 {
     static std::atomic<int> counter { 0 };
     const std::string busName = busNameIn.empty() ? "aimix_demo_" + std::to_string (counter++) : busNameIn;
@@ -188,13 +189,19 @@ SessionRun runSyntheticSession (double seconds, int blockSize, const std::string
     const int numTracks = (int) tracks.size();
     for (int t = 0; t <= numTracks; ++t)   // last one is the mix bus
     {
+        if (options.masterOnly && t < numTracks)
+        {
+            run.publishers.push_back (nullptr);
+            run.analyzers.push_back (nullptr);
+            continue;
+        }
         run.publishers.push_back (std::make_unique<BusPublisher> (run.bus));
         auto a = std::make_unique<TrackAnalyzer>();
         a->prepare (fs, 2);
         if (t < numTracks)
         {
             a->setTrackName (tracks[(size_t) t].name.c_str());
-            a->setRole (tracks[(size_t) t].role);
+            a->setRole (options.autoRoles ? TrackRole::Unknown : tracks[(size_t) t].role);
         }
         else
         {
@@ -225,9 +232,12 @@ SessionRun runSyntheticSession (double seconds, int blockSize, const std::string
             tracks[(size_t) t].render (l.data(), r.data(), n, pos);
             const float* ch[] = { l.data(), r.data() };
 
-            const auto t0 = clock::now();
-            run.analyzers[(size_t) t]->process (ch, 2, n, tl, *run.publishers[(size_t) t]);
-            run.analyzerSeconds += std::chrono::duration<double> (clock::now() - t0).count();
+            if (run.analyzers[(size_t) t] != nullptr)
+            {
+                const auto t0 = clock::now();
+                run.analyzers[(size_t) t]->process (ch, 2, n, tl, *run.publishers[(size_t) t]);
+                run.analyzerSeconds += std::chrono::duration<double> (clock::now() - t0).count();
+            }
 
             for (int i = 0; i < n; ++i)
             {
@@ -247,6 +257,8 @@ SessionRun runSyntheticSession (double seconds, int blockSize, const std::string
             run.engine->tick (startMs + (uint64_t) ((double) (pos + n) * 1000.0 / fs));
             run.engineSeconds += std::chrono::duration<double> (clock::now() - t0).count();
             run.engineTicks++;
+            if (afterTick)
+                afterTick (*run.engine);
         }
     }
 

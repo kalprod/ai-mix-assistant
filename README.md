@@ -16,9 +16,10 @@ One plugin binary, two modes:
 | `core/include/aimix/SpscRingBuffer.h`, `SharedBus.h` | Phase 1: wait-free SPSC rings in a 64-slot shared-memory bus. |
 | `core/src/Loudness.cpp`, `SpectralAnalysis.cpp`, `StereoAnalysis.cpp`, `DelayEstimator.cpp` | Phase 2: BS.1770 LUFS, Bark-band masking, Mid/Side, GCC-PHAT time offsets. |
 | `core/src/TrackAnalyzer.cpp` | Listener audio-thread analyser (no allocation, const input). |
+| `core/src/RoleClassifier.cpp` | "Auto" role: detects kick, snare, drums, bass, vocal or instrument from what a track sounds like. |
 | `core/src/RuleEngine.cpp`, `MixEngine.cpp` | Phase 3: Master Engine thread and heuristic rules producing structured `Suggestion`s (JSON-serialisable). |
 | `plugin/` | Phase 4: `AudioProcessor`, editor, `ui/ChannelRack`, `ui/DiagnosticCards`. |
-| `tests/`, `bench/`, `tools/PluginChecks.cpp` | Phase 5: 40 unit tests, CPU benchmark, host-like checks + UI snapshots. |
+| `tests/`, `bench/`, `tools/PluginChecks.cpp` | Phase 5: 48 unit tests, CPU benchmark, host-like checks + UI snapshots. |
 | `docs/HOST_COMPATIBILITY.md` | What was validated, and the checklist for macOS/Windows/AAX hosts. |
 | `docs/validation/` | Raw outputs of every check from the last run. |
 
@@ -41,8 +42,10 @@ Use `-DAIMIX_JUCE_PATH=/path/to/JUCE` to build against a local JUCE checkout.
 
 ## Using it
 
-1. Insert **AI Mix Assistant** on each track, ideally last in the chain. Set **Role** (Vocal, Kick, Bass...): roles decide which track yields when two of them clash.
+1. Insert **AI Mix Assistant** on each track, ideally last in the chain. Leave **Role** on **Auto**: after a few seconds of playback the Master Engine works out whether the track is a kick, snare, drums, bass, vocal or another instrument, and the Listener shows what it detected. Pick a role yourself if the guess is wrong; roles decide which track yields when two of them clash.
 2. Insert one more instance on the mix bus and set **Mode** to **Master Engine**.
-3. Play the session. Cards appear after a condition has held for about 0.2 s and stay for about 0.7 s after it clears. Click a strip to filter cards to that track; **Dismiss** hides a card for the session.
+3. Play the session. A card appears once a problem has been measured for about a quarter of a second, and stays until it is fixed: when the problem stops being measured the card turns green ("looks fixed") and disappears after about 3 seconds of playback without it. Stopping playback freezes the cards rather than clearing them. Click a strip to filter cards to that track; **Dismiss** hides a card for the session.
+
+**Only one instance, on the mix bus?** That works too and gives loudness, headroom, stereo/mono and overall tone (muddy, harsh) advice for the whole mix, with fixes on the mix bus. Advice about individual instruments, and which tracks clash, needs a Listener on those tracks.
 
 Track names come from the host where it supports it (VST3, AU); the **Track** field overrides it.

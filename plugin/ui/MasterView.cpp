@@ -75,6 +75,24 @@ void MasterView::setReport (std::shared_ptr<const MixReport> report)
 
 void MasterView::paint (juce::Graphics& g)
 {
+    if (current != nullptr && current->isActiveMaster && current->tracks.empty())
+    {
+        // Only the mix bus is analysed: say what that covers and how to get more.
+        auto note = rack.getBounds().toFloat().withTrimmedTop (24.0f).withTrimmedLeft ((float) ChannelStrip::kWidth + 12.0f).reduced (4.0f, 0.0f);
+        if (note.getWidth() > 160.0f)
+        {
+            g.setColour (colours::panel);
+            g.fillRoundedRectangle (note.withHeight (juce::jmin (note.getHeight(), 140.0f)), 8.0f);
+            auto t = note.reduced (16.0f, 14.0f);
+            drawWrapped (g, "Listening to the whole mix", font (15.0f, true), colours::text, t.removeFromTop (22.0f));
+            drawWrapped (g, "From the mix bus alone you get loudness, headroom, stereo and overall tone advice.\n\n"
+                            "To find out which instrument causes a problem, and which tracks clash with each other, "
+                            "also put AI Mix Assistant on each track and leave its Mode on Listener. It detects "
+                            "what each track is by itself.",
+                         font (13.0f), colours::textDim, t);
+        }
+    }
+
     if (current != nullptr && ! current->isActiveMaster)
     {
         g.setColour (colours::warning);

@@ -12,6 +12,7 @@ public:
     struct Status
     {
         juce::String trackName;
+        juce::String roleText;     // "Kick (detected)", "Auto: listening...", or the chosen role
         TrackRole role = TrackRole::Unknown;
         int slot = -1;
         bool sharedMemory = false;

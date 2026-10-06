@@ -133,10 +133,19 @@ void MixEngine::ingest (TrackState& s, const AnalysisPayload& p, uint64_t nowMs)
     v.name.assign (p.trackName, strnlen (p.trackName, kMaxTrackNameChars));
     if (v.name.empty())
         v.name = "Track " + std::to_string (p.trackId + 1);
-    v.role = p.role;
+    s.chosenRole = p.role;
     v.numChannels = (int) p.numChannels;
     v.sampleRate = p.sampleRate;
     s.isMasterBus = (p.flags & kFlagMasterBus) != 0;
+    if (s.isMasterBus)
+        v.role = TrackRole::MasterBus;
+    else if (p.role != TrackRole::Unknown)
+        v.role = p.role;
+    else
+    {
+        s.classifier.addFrame (p);
+        v.role = s.classifier.role();
+    }
     s.lastFrameMs = nowMs;
     s.framesReceived++;
     if (! silent)
@@ -242,6 +251,8 @@ TrackSummary MixEngine::summarise (const TrackState& s, uint64_t nowMs) const
     t.view = s.view;
     t.view.active = s.lastSignalMs != 0 && nowMs - s.lastSignalMs <= kActiveHoldMs;
     t.stale = nowMs - s.lastFrameMs > kStaleAfterMs;
+    t.autoRole = ! s.isMasterBus && s.chosenRole == TrackRole::Unknown;
+    t.roleDetecting = t.autoRole && ! s.classifier.hasDecided();
 
     t.view.bands = computeBandProfileFromPower (s.analysisPower.data(), kNumFftBins, kFftSize, s.view.sampleRate);
 
@@ -292,6 +303,9 @@ void MixEngine::tick (uint64_t nowMs)
 
             auto summary = summarise (s, nowMs);
             summary.droppedFrames = bus->slot (i).droppedFrames.load (std::memory_order_relaxed);
+            bus->slot (i).detectedRole.store (summary.autoRole && ! summary.roleDetecting
+                                                  ? kDetectedRoleValid | (uint32_t) summary.view.role : 0u,
+                                              std::memory_order_relaxed);
 
             if (s.isMasterBus)
             {
