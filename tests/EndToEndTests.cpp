@@ -67,20 +67,20 @@ TEST_CASE ("e2e: synthetic session -> listeners -> bus -> master engine -> expec
 TEST_CASE ("e2e: second master engine on the same bus stays passive")
 {
     auto run = runSyntheticSession (1.0);
-    MixEngine second (run.bus);
-    second.tick (monotonicMillis() + 10);   // first engine heart-beat recently (in virtual time)
-    auto r = second.getLatestReport();
+    auto second = std::make_unique<MixEngine> (run.bus);   // ~4.5 MB: too big for a 1 MB Windows stack
+    second->tick (monotonicMillis() + 10);   // first engine heart-beat recently (in virtual time)
+    auto r = second->getLatestReport();
     CHECK (r->tracks.empty() || ! r->isActiveMaster);
 }
 
 TEST_CASE ("e2e: engine thread runs and publishes reports")
 {
     auto bus = SharedBus::open ("aimix_t_thread", SharedBus::Backend::ProcessLocal);
-    MixEngine engine (bus);
-    engine.start (10);
-    for (int i = 0; i < 200 && engine.getLatestReport()->tick < 3; ++i)
+    auto engine = std::make_unique<MixEngine> (bus);
+    engine->start (10);
+    for (int i = 0; i < 200 && engine->getLatestReport()->tick < 3; ++i)
         std::this_thread::sleep_for (std::chrono::milliseconds (5));
-    engine.stop();
-    CHECK (engine.getLatestReport()->tick >= 3);
-    CHECK (engine.ownsBus());
+    engine->stop();
+    CHECK (engine->getLatestReport()->tick >= 3);
+    CHECK (engine->ownsBus());
 }

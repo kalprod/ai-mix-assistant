@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -40,6 +41,7 @@ void operator delete[] (void* p, std::size_t) noexcept { std::free (p); }
 
 int main (int argc, char** argv)
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0);   // a crash must not swallow the last results
     const char* filter = argc > 1 ? argv[1] : nullptr;
     int run = 0;
     for (auto& t : aimixtest::registry())

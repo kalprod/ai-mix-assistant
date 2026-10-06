@@ -214,7 +214,7 @@ TEST_CASE ("mid/side and correlation: mono, anti-phase and decorrelated signals"
 TEST_CASE ("delay: integer offsets either direction, with and without PHAT")
 {
     const int n = 2048;
-    auto src = noise (n + 200, 11);
+    auto src = noise (n + 400, 11);
     DelayEstimator est (n);
 
     for (int d : { 0, 1, 37, -12, 150 })
@@ -222,8 +222,8 @@ TEST_CASE ("delay: integer offsets either direction, with and without PHAT")
         std::vector<float> ref ((size_t) n), tgt ((size_t) n);
         for (int i = 0; i < n; ++i)
         {
-            ref[(size_t) i] = src[(size_t) (i + 100)];
-            tgt[(size_t) i] = src[(size_t) (i + 100 - d)];   // target delayed by d
+            ref[(size_t) i] = src[(size_t) (i + 200)];
+            tgt[(size_t) i] = src[(size_t) (i + 200 - d)];   // target delayed by d
         }
         for (bool phat : { true, false })
         {
