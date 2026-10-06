@@ -46,7 +46,7 @@ TEST_CASE ("ring: concurrent producer/consumer delivers 2M items in order with n
 {
     static SpscRingBuffer<Item, 8> ring;   // static: large-ish and shared with threads
     ring.reset();
-    constexpr uint64_t total = 2'000'000;
+    static constexpr uint64_t total = 2'000'000;
 
     std::thread producer ([]
     {
