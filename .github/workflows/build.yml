@@ -68,6 +68,12 @@ jobs:
               for b in "$OUT"/*.component/Contents/MacOS/* "$OUT"/*.vst3/Contents/MacOS/* "$OUT"/*.app/Contents/MacOS/*; do
                 echo "$b: $(lipo -archs "$b")"; lipo -archs "$b" | grep -q arm64 && lipo -archs "$b" | grep -q x86_64
               done
+              # Apple Silicon refuses to load unsigned code, and the AU bundle comes
+              # out of the build unsigned. Ad-hoc sign every bundle (no Apple ID needed).
+              for b in "$OUT"/*.component "$OUT"/*.vst3 "$OUT"/*.app; do
+                codesign --force --deep --sign - "$b"
+                codesign --verify --deep --strict "$b"
+              done
               ditto -c -k --keepParent "$OUT" "$OUT.zip" ;;
             Windows)
               cp "$REL/Standalone/"*.exe "$OUT/"
