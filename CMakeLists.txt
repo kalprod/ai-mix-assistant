@@ -1,4 +1,8 @@
 cmake_minimum_required (VERSION 3.22)
+
+# Run on every Apple Silicon Mac (macOS 11+), not just the build machine's macOS.
+set (CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+
 project (AIMixAssistant VERSION 0.1.0 LANGUAGES C CXX)
 
 set (CMAKE_CXX_STANDARD 17)

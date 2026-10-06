@@ -64,6 +64,10 @@ jobs:
                 "3. This build is not notarized. In Terminal run:" \
                 "   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/'AI Mix Assistant.component' ~/Library/Audio/Plug-Ins/VST3/'AI Mix Assistant.vst3'" \
                 "4. Restart your DAW and rescan plug-ins." > "$OUT/INSTALL.txt"
+              # Every binary must carry a native Apple Silicon slice as well as Intel.
+              for b in "$OUT"/*.component/Contents/MacOS/* "$OUT"/*.vst3/Contents/MacOS/* "$OUT"/*.app/Contents/MacOS/*; do
+                echo "$b: $(lipo -archs "$b")"; lipo -archs "$b" | grep -q arm64 && lipo -archs "$b" | grep -q x86_64
+              done
               ditto -c -k --keepParent "$OUT" "$OUT.zip" ;;
             Windows)
               cp "$REL/Standalone/"*.exe "$OUT/"
@@ -88,3 +92,35 @@ jobs:
           name: AIMixAssistant-${{ runner.os }}
           path: AIMixAssistant-${{ runner.os }}.zip
           compression-level: 0
+
+  # Install the exact zip people download onto the newest macOS on Apple
+  # Silicon and validate it there, as a fresh user would.
+  verify-macos-latest:
+    needs: build
+    runs-on: macos-26
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AIMixAssistant-macOS
+      - name: Install like a user
+        run: |
+          sw_vers; uname -m
+          ditto -x -k AIMixAssistant-macOS.zip .
+          mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
+          cp -R "AIMixAssistant-macOS/AI Mix Assistant.component" ~/Library/Audio/Plug-Ins/Components/
+          cp -R "AIMixAssistant-macOS/AI Mix Assistant.vst3" ~/Library/Audio/Plug-Ins/VST3/
+          codesign --verify --deep --strict ~/Library/Audio/Plug-Ins/Components/"AI Mix Assistant.component"
+          codesign --verify --deep --strict ~/Library/Audio/Plug-Ins/VST3/"AI Mix Assistant.vst3"
+          killall -9 AudioComponentRegistrar || true
+      - name: auval (AU, native arm64)
+        run: auval -v aufx Aima Aimx
+      - name: pluginval (AU + VST3)
+        run: |
+          curl -sSLo pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip && unzip -q pv.zip
+          PV=pluginval.app/Contents/MacOS/pluginval
+          $PV --strictness-level 10 --validate-in-process ~/Library/Audio/Plug-Ins/VST3/"AI Mix Assistant.vst3"
+          $PV --strictness-level 10 --validate-in-process ~/Library/Audio/Plug-Ins/Components/"AI Mix Assistant.component"
+      - name: Standalone launches
+        run: |
+          "AIMixAssistant-macOS/AI Mix Assistant.app/Contents/MacOS/AI Mix Assistant" & PID=$!
+          sleep 10; kill -0 $PID && echo "still running after 10 s"; kill $PID
