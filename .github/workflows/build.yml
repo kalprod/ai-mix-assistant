@@ -44,10 +44,47 @@ jobs:
           killall -9 AudioComponentRegistrar || true
           auval -v aufx Aima Aimx
 
+      # Zip inside the job: GitHub's artifact upload drops file permissions,
+      # which would leave the macOS bundles unable to load.
+      - name: Package
+        shell: bash
+        run: |
+          OUT="AIMixAssistant-${{ runner.os }}"
+          REL=$(dirname "$(find build -path '*AIMixAssistant_artefacts/Release/VST3' -maxdepth 4 -type d | head -1)")
+          mkdir -p "$OUT"
+          cp -R "$REL/VST3/"*.vst3 "$OUT/"
+          case "${{ runner.os }}" in
+            macOS)
+              cp -R "$REL/AU/"*.component "$OUT/"
+              cp -R "$REL/Standalone/"*.app "$OUT/"
+              printf '%s\n' \
+                "AI Mix Assistant for macOS (Apple Silicon + Intel)" "" \
+                "1. Copy 'AI Mix Assistant.component' to ~/Library/Audio/Plug-Ins/Components/  (Logic, GarageBand)" \
+                "2. Copy 'AI Mix Assistant.vst3' to ~/Library/Audio/Plug-Ins/VST3/  (Ableton, Cubase, Reaper, Bitwig...)" \
+                "3. This build is not notarized. In Terminal run:" \
+                "   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/'AI Mix Assistant.component' ~/Library/Audio/Plug-Ins/VST3/'AI Mix Assistant.vst3'" \
+                "4. Restart your DAW and rescan plug-ins." > "$OUT/INSTALL.txt"
+              ditto -c -k --keepParent "$OUT" "$OUT.zip" ;;
+            Windows)
+              cp "$REL/Standalone/"*.exe "$OUT/"
+              printf '%s\r\n' \
+                "AI Mix Assistant for Windows (64-bit)" "" \
+                '1. Copy the "AI Mix Assistant.vst3" folder to C:\Program Files\Common Files\VST3' \
+                "2. Restart your DAW and rescan plug-ins." \
+                "If Windows SmartScreen warns about the standalone .exe, choose More info > Run anyway." > "$OUT/INSTALL.txt"
+              7z a -tzip "$OUT.zip" "$OUT" > /dev/null ;;
+            Linux)
+              cp "$REL/Standalone/"* "$OUT/"
+              printf '%s\n' \
+                "AI Mix Assistant for Linux (x86-64)" "" \
+                "1. Copy 'AI Mix Assistant.vst3' to ~/.vst3/" \
+                "2. Needs libasound2, libfreetype6 and libfontconfig1." \
+                "3. Restart your DAW and rescan plug-ins." > "$OUT/INSTALL.txt"
+              zip -qry "$OUT.zip" "$OUT" ;;
+          esac
+
       - uses: actions/upload-artifact@v4
         with:
-          name: AIMixAssistant-${{ matrix.os }}
-          path: |
-            build/**/AIMixAssistant_artefacts/Release/VST3
-            build/**/AIMixAssistant_artefacts/Release/AU
-            build/**/AIMixAssistant_artefacts/Release/Standalone
+          name: AIMixAssistant-${{ runner.os }}
+          path: AIMixAssistant-${{ runner.os }}.zip
+          compression-level: 0
