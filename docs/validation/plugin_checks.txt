@@ -23,7 +23,9 @@
 [PASS] wrote ui_master_small.png
 [PASS] wrote ui_master_auto_roles.png
 [PASS] wrote ui_master_enlarged.png
+[PASS] wrote ui_master_steps.png
 [PASS] advice panel can be enlarged and shrunk again
 [PASS] wrote ui_master_bus_only.png
+[PASS] wrote ui_master_bus_only_steps.png
 
 ALL PLUGIN CHECKS PASSED (0 failed)

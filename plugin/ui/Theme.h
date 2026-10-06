@@ -74,6 +74,9 @@ inline juce::String categoryLabel (Category c)
         case Category::Eq:      return "EQ";
         case Category::Panning: return "PANNING";
         case Category::Phase:   return "PHASE";
+        case Category::Dynamics: return "DYNAMICS";
+        case Category::Depth:   return "DEPTH";
+        case Category::General: return "TIP";
     }
     return {};
 }

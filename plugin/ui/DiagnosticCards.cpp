@@ -56,7 +56,14 @@ DiagnosticCard::Layout DiagnosticCard::computeLayout (float width) const
     l.header = { x, y, w, 24.0f };                             y += 34.0f;
     const float th = textHeight (suggestion.title, titleFont(), w);
     l.title = { x, y, w, th };                                 y += th + 4.0f;
-    l.tracks = { x, y, w, 20.0f };                             y += 28.0f;
+    if (! suggestion.trackNames.empty())
+    {
+        l.tracks = { x, y, w, 20.0f };                         y += 28.0f;
+    }
+    else
+    {
+        y += 6.0f;
+    }
     const float dh = textHeight (suggestion.detail, bodyFont(), w);
     l.detail = { x, y, w, dh };                                y += dh + 10.0f;
 
@@ -91,7 +98,7 @@ void DiagnosticCard::paint (juce::Graphics& g)
     const auto l = computeLayout ((float) getWidth());
     auto bounds = getLocalBounds().toFloat().reduced (0.5f);
     const bool resolving = suggestion.resolving;
-    const auto sev = resolving ? colours::meterGreen : severityColour (suggestion.severity);
+    const auto sev = resolving ? colours::meterGreen : suggestion.tip ? colours::amber : severityColour (suggestion.severity);
 
     g.setColour (colours::panelRaised);
     g.fillRoundedRectangle (bounds, 10.0f);
@@ -105,7 +112,7 @@ void DiagnosticCard::paint (juce::Graphics& g)
     // header: severity badge, category chip, confidence
     auto header = l.header;
     {
-        const auto label = resolving ? juce::String ("LOOKS FIXED") : severityLabel (suggestion.severity);
+        const auto label = resolving ? juce::String ("LOOKS FIXED") : suggestion.tip ? juce::String ("TIP") : severityLabel (suggestion.severity);
         const auto f = font (12.5f, true);
         const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 20.0f;
         auto badge = header.removeFromLeft (bw);
@@ -116,6 +123,7 @@ void DiagnosticCard::paint (juce::Graphics& g)
         g.drawText (label, badge, juce::Justification::centred);
     }
     header.removeFromLeft (6.0f);
+    if (! suggestion.tip)   // a tip's step heading already says what it is about
     {
         const auto label = categoryLabel (suggestion.category);
         const auto f = font (12.5f, true);
@@ -130,8 +138,9 @@ void DiagnosticCard::paint (juce::Graphics& g)
     header.removeFromLeft (10.0f);
     g.setColour (colours::textFaint);
     g.setFont (smallFont());
-    g.drawText (resolving ? juce::String ("checking it stays fixed...")
-                          : "confidence " + juce::String (juce::roundToInt (suggestion.confidence * 100.0f)) + "%",
+    g.drawText (resolving        ? juce::String ("checking it stays fixed...")
+                : suggestion.tip ? juce::String ("general advice: the plugin can't measure this one")
+                                 : "confidence " + juce::String (juce::roundToInt (suggestion.confidence * 100.0f)) + "%",
                 header.withTrimmedRight (90.0f), juce::Justification::centredLeft);
 
     drawWrapped (g, suggestion.title, titleFont(), colours::text, l.title);
@@ -179,10 +188,63 @@ void DiagnosticCard::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+namespace
+{
+constexpr float kStepCircle = 34.0f;
+constexpr float kStepTextX = kStepCircle + 14.0f;
+const juce::Font stepTitleFont()   { return font (20.0f, true); }
+const juce::Font stepSummaryFont() { return font (14.5f); }
+}
+
+int StepHeader::getHeightForWidth (int width) const
+{
+    return (int) std::ceil (6.0f + 26.0f + textHeight (stepSummary (step), stepSummaryFont(), (float) width - kStepTextX) + 6.0f);
+}
+
+void StepHeader::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+
+    // Numbered circle on a vertical line, like a step-by-step guide.
+    auto circle = juce::Rectangle<float> (0.0f, 4.0f, kStepCircle, kStepCircle);
+    g.setColour (colours::accent);
+    g.fillEllipse (circle);
+    g.setColour (colours::panelRaised);
+    g.setFont (font (18.0f, true));
+    g.drawText (juce::String ((int) step), circle, juce::Justification::centred);
+
+    auto text = r.withTrimmedLeft (kStepTextX).withTrimmedTop (6.0f);
+    auto titleRow = text.removeFromTop (26.0f);
+    g.setColour (colours::text);
+    g.setFont (stepTitleFont());
+    const juce::String title (stepTitle (step));
+    g.drawText (title, titleRow, juce::Justification::centredLeft);
+
+    // Status beside the title: what was found for this step.
+    const float tw = juce::GlyphArrangement::getStringWidth (stepTitleFont(), title);
+    auto status = titleRow.withTrimmedLeft (tw + 12.0f);
+    g.setFont (font (13.5f, true));
+    if (problemCount > 0)
+    {
+        g.setColour (colours::accent);
+        g.drawText (juce::String (problemCount) + (problemCount == 1 ? " thing to fix" : " things to fix"), status, juce::Justification::centredLeft);
+    }
+    else if (step != MixStep::Depth && step != MixStep::FinalTip)
+    {
+        g.setColour (juce::Colour (0xff2e9a57));
+        g.drawText (juce::CharPointer_UTF8 ("\xe2\x9c\x93 nothing to fix here"), status, juce::Justification::centredLeft);   // ✓
+    }
+
+    drawWrapped (g, stepSummary (step), stepSummaryFont(), colours::textDim, text);
+}
+
+//==============================================================================
 DiagnosticPanel::DiagnosticPanel()
 {
-    const char* labels[] = { "All", "Gain", "EQ", "Pan", "Phase" };
-    for (int i = 0; i < 5; ++i)
+    // "All" plus steps 1 - 5 (the final tip only shows under All).
+    const char* labels[] = { "All", "1 Gain", "2 EQ", "3 Dyn", "4 Stereo", "5 Depth" };
+    constexpr int numFilters = 6;
+    for (int i = 0; i < numFilters; ++i)
     {
         auto* b = filterButtons.add (new juce::TextButton (labels[i]));
         b->setClickingTogglesState (true);
@@ -191,10 +253,10 @@ DiagnosticPanel::DiagnosticPanel()
         b->setColour (juce::TextButton::buttonOnColourId, colours::amber);
         b->setColour (juce::TextButton::textColourOffId, colours::textDim);
         b->setColour (juce::TextButton::textColourOnId, colours::amberText);
-        b->setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < 4 ? juce::Button::ConnectedOnRight : 0));
+        b->setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < numFilters - 1 ? juce::Button::ConnectedOnRight : 0));
         b->onClick = [this, i]
         {
-            categoryFilter = i == 0 ? std::nullopt : std::optional<Category> ((Category) (i - 1));
+            stepFilter = i == 0 ? std::nullopt : std::optional<MixStep> ((MixStep) i);
             rebuild();
         };
         addAndMakeVisible (b);
@@ -206,6 +268,9 @@ DiagnosticPanel::DiagnosticPanel()
     expandButton.setTooltip ("Show the advice across the whole window");
     expandButton.onClick = [this] { setExpanded (! expanded); if (onExpandChanged) onExpandChanged (expanded); };
     addAndMakeVisible (expandButton);
+
+    for (int i = 1; i <= kNumMixSteps; ++i)
+        content.addChildComponent (headers.add (new StepHeader ((MixStep) i)));
 
     viewport.setViewedComponent (&content, false);
     viewport.setScrollBarsShown (true, false);
@@ -221,7 +286,7 @@ DiagnosticPanel::DiagnosticPanel()
 
 bool DiagnosticPanel::passesFilter (const Suggestion& s) const
 {
-    if (categoryFilter.has_value() && s.category != *categoryFilter)
+    if (stepFilter.has_value() && s.step != *stepFilter)
         return false;
     if (trackFilter >= 0 && std::find (s.trackIds.begin(), s.trackIds.end(), (uint32_t) trackFilter) == s.trackIds.end())
         return false;
@@ -274,12 +339,35 @@ void DiagnosticPanel::rebuild()
 void DiagnosticPanel::layoutCards()
 {
     const int w = juce::jmax (200, viewport.getWidth() - viewport.getScrollBarThickness() - 4);
+    const bool filtered = stepFilter.has_value() || trackFilter >= 0;
     int y = 0;
-    for (auto* c : cards)
+    for (auto* h : headers)
     {
-        const int h = c->getHeightForWidth (w);
-        c->setBounds (0, y, w, h);
-        y += h + 12;
+        int problems = 0, tips = 0;
+        for (auto* c : cards)
+            if (c->getSuggestion().step == h->getStep())
+                (c->getSuggestion().tip ? tips : problems)++;
+
+        // Every step is listed so the user can work top to bottom; with a
+        // filter on, only the steps that have cards are.
+        const bool show = ! cards.isEmpty() && (! filtered || problems + tips > 0);
+        h->setVisible (show);
+        if (! show)
+            continue;
+        h->setCounts (problems, tips);
+        const int hh = h->getHeightForWidth (w);
+        h->setBounds (0, y, w, hh);
+        y += hh + 8;
+
+        for (auto* c : cards)
+        {
+            if (c->getSuggestion().step != h->getStep())
+                continue;
+            const int ch = c->getHeightForWidth (w);
+            c->setBounds (0, y, w, ch);
+            y += ch + 12;
+        }
+        y += 10;
     }
     emptyLabel.setBounds (0, 0, w, 80);
     content.setSize (w, juce::jmax (y, 80));
@@ -295,7 +383,8 @@ void DiagnosticPanel::paint (juce::Graphics& g)
     // severity counts
     int counts[3] {};
     for (const auto& s : all)
-        counts[(int) s.severity]++;
+        if (! s.tip)
+            counts[(int) s.severity]++;
     auto x = 116.0f;
     for (int sev = 2; sev >= 0; --sev)
     {
@@ -329,9 +418,9 @@ void DiagnosticPanel::resized()
     expandButton.setBounds (top.removeFromRight (96).reduced (0, 3));
     top.removeFromRight (8);
     // Narrow panel: filters move to their own row instead of covering the counts.
-    if (getWidth() < 640)
+    if (getWidth() < 820)
         top = r.removeFromTop (kHeaderHeight);
-    auto buttons = top.removeFromRight (juce::jmin (300, top.getWidth())).reduced (0, 3);
+    auto buttons = top.removeFromRight (juce::jmin (440, top.getWidth())).reduced (0, 3);
     const int bw = buttons.getWidth() / filterButtons.size();
     for (auto* b : filterButtons)
         b->setBounds (buttons.removeFromLeft (bw));

@@ -41,6 +41,7 @@ struct TrackView
     float integratedLufs = -144.0f;
     float correlation = 1.0f;               // smoothed
     float sideToMidDb = -100.0f;            // smoothed
+    float levelSwingLu = 0.0f;              // spread (std dev) of momentary loudness while playing; 0 = not known yet
     BandProfile bands;                      // long-term averaged spectrum
     bool active = false;                    // carrying signal recently
 
@@ -82,6 +83,17 @@ struct RuleConfig
     float lowEndShareUnknown = 0.40f;
     float harshExcessDb     = 6.0f;
     float mudExcessDb       = 5.0f;
+    float lowPeakDb         = -20.0f;  // peaks below this: raise the track toward -10 dBFS
+    float targetPeakDb      = -10.0f;
+    // dynamics
+    float levelSwingLu      = 4.5f;    // vocal/bass loudness spread that calls for compression
+    float squashedCrestDb   = 8.0f;    // drums with less peak-to-RMS than this have lost their transients
+    float mixSquashedCrestDb = 6.0f;
+    float parallelCrestDb   = 18.0f;   // very spiky drums: parallel compression adds weight
+    float offCentreDb       = 3.0f;    // L/R level difference for bass, kick or vocal
+    float wetVocalSideToMidDb = -12.0f;
+    // General workflow tips (depth, final tip) alongside the measured cards.
+    bool workflowTips = false;
     // panning
     float maskingPanThreshold = 0.50f;
     float monoSideToMidDb   = -20.0f;

@@ -86,6 +86,8 @@ private:
         RoleClassifier classifier;
         double meanSquare[2] {};
         double midEnergy = 0.0, sideEnergy = 0.0;
+        double loudnessMean = 0.0, loudnessVar = 0.0;
+        int loudnessFrames = 0;
         std::array<float, kNumFftBins> analysisPower {}, displayPower {};
         bool spectrumPrimed = false;
         std::array<FrameHistory, 8> history;

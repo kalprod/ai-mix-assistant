@@ -11,6 +11,15 @@ namespace aimix
 {
 namespace
 {
+constexpr int kLoudnessFrames = 230;      // ~10 s running average of the loudness spread
+constexpr int kLoudnessMinFrames = 70;    // ~3 s of playing before it is reported
+
+RuleConfig withWorkflowTips (RuleConfig c)
+{
+    c.workflowTips = true;
+    return c;
+}
+
 constexpr uint64_t kStaleAfterMs       = 2000;
 constexpr uint64_t kActiveHoldMs       = 1500;
 constexpr uint64_t kPeakHoldMs         = 3000;
@@ -38,7 +47,7 @@ float powerDb (double p) { return (float) (10.0 * std::log10 (p + 1.0e-12)); }
 }
 
 MixEngine::MixEngine (std::shared_ptr<SharedBus> b, RuleConfig config)
-    : bus (std::move (b)), token (randomToken()), rules (config)
+    : bus (std::move (b)), token (randomToken()), rules (withWorkflowTips (config))
 {
     latest = std::make_shared<MixReport>();
 }
@@ -167,6 +176,19 @@ void MixEngine::ingest (TrackState& s, const AnalysisPayload& p, uint64_t nowMs)
     v.momentaryLufs = p.momentaryLufs;
     v.shortTermLufs = p.shortTermLufs;
     v.integratedLufs = p.integratedLufs;
+
+    // Spread of momentary loudness while the part plays: how much a
+    // compressor would have to even out. Pauses (more than 20 LU under the
+    // track's integrated loudness, as in EBU loudness range) are ignored.
+    if (! silent && p.momentaryLufs > -70.0f && p.integratedLufs > -70.0f && p.momentaryLufs > p.integratedLufs - 20.0f)
+    {
+        const double x = p.momentaryLufs;
+        const double a = 1.0 / std::min (++s.loudnessFrames, kLoudnessFrames);
+        const double d = x - s.loudnessMean;
+        s.loudnessMean += a * d;
+        s.loudnessVar += a * (d * (x - s.loudnessMean) - s.loudnessVar);
+        v.levelSwingLu = s.loudnessFrames >= kLoudnessMinFrames ? (float) std::sqrt (std::max (0.0, s.loudnessVar)) : 0.0f;
+    }
 
     if (! silent)
     {

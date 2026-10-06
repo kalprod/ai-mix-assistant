@@ -93,6 +93,7 @@ Suggestion make (std::string ruleId, std::string keySuffix, Category c, Severity
     out.ruleId = std::move (ruleId);
     out.key = out.ruleId + ":" + keySuffix;
     out.category = c;
+    out.step = stepForRule (out.ruleId);
     out.severity = s;
     out.confidence = std::clamp (confidence, 0.0f, 1.0f);
     for (auto* t : tracks)
@@ -168,6 +169,21 @@ void gainRules (const TrackView& t, const MixSnapshot& mix, const RuleConfig& cf
         s.action = { ActionType::AdjustGain, t.trackId, boost };
         out.push_back (std::move (s));
     }
+    else if (t.role != TrackRole::Fx && peak > -70.0f
+             && peak < threshold ("gain.low_peaks", idKey (t), cfg.lowPeakDb, cfg.lowPeakDb + 4.0f))
+    {
+        auto s = make ("gain.low_peaks", idKey (t), Category::Gain, Severity::Info, 0.55f, { &t });
+        const float boost = cfg.targetPeakDb - peak;
+        s.title = fmt ("'%s' is recorded low", q (t.name));
+        s.detail = fmt ("Its peaks only reach %.1f dBFS. Peaks between about -10 and 0 dB leave headroom without running plugins and the noise floor too low.", peak);
+        s.steps = {
+            fmt ("Raise the clip gain or input trim of '%s' by about %.0f dB, before any plugins.", q (t.name), boost),
+            "Aim for peaks around -10 dBFS on the track meter.",
+            "Then set the balance with the faders, not the trim.",
+        };
+        s.action = { ActionType::AdjustGain, t.trackId, boost };
+        out.push_back (std::move (s));
+    }
 
     // No cross-track "too loud in the balance" rule: inserts are pre-fader in
     // most hosts, so a Listener cannot see fader moves (see docs/PLAN.md).
@@ -178,6 +194,20 @@ void masterRules (const TrackView& m, const RuleConfig& cfg, std::vector<Suggest
 {
     if (! m.active)
         return;
+
+    const float mixCrest = m.maxPeakDb() - m.maxRmsDb();
+    if (m.maxRmsDb() > -40.0f && mixCrest < threshold ("dyn.mix_squashed", "master", cfg.mixSquashedCrestDb, cfg.mixSquashedCrestDb + 1.0f))
+    {
+        auto s = make ("dyn.mix_squashed", "master", Category::Dynamics, Severity::Warning, 0.6f, { &m });
+        s.title = "The mix is over-compressed";
+        s.detail = fmt ("Peaks are only %.1f dB above the average level on the mix bus. The punch is gone and the mix will sound flat and tiring.", mixCrest);
+        s.steps = {
+            "Bypass any limiter or bus compressor on the mix bus and listen to what comes back.",
+            "Bring them back gently: 1-2 dB of gain reduction on the bus compressor with a slow attack (30 ms).",
+            "Get loudness from balance and parallel compression on drums rather than limiting the whole mix.",
+        };
+        out.push_back (std::move (s));
+    }
 
     if (m.maxPeakDb() >= threshold ("mix.headroom", "master", cfg.masterCeilingDb, cfg.masterCeilingDb - 0.5f))
     {
@@ -293,6 +323,94 @@ void eqTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Sugges
         out.push_back (std::move (s));
     }
 
+    // Mud: 250 - 500 Hz sticking out of the track's own tilt. Kick and bass
+    // carry their body down there and are left alone.
+    if (! isLowEndRole (t.role))
+    {
+        int mudBand = -1;
+        float mudExcess = 0.0f;
+        for (int b = 2; b <= 4; ++b)
+            if (residual[(size_t) b] > mudExcess) { mudExcess = residual[(size_t) b]; mudBand = b; }
+
+        const float mudRaise = cfg.mudExcessDb + 1.0f;
+        if (mudBand >= 0 && mudExcess > threshold ("eq.mud", idKey (t), mudRaise, mudRaise - 2.0f))
+        {
+            const float f = bandCentreHz (mudBand);
+            const float mudQ = std::min (3.0f, bandQ (mudBand));
+            const float cut = -std::min (5.0f, mudExcess - 2.0f);
+            auto s = make ("eq.mud", idKey (t), Category::Eq, Severity::Info, std::min (0.95f, 0.4f + mudExcess / 30.0f), { &t });
+            s.title = fmt ("'%s' is muddy around %s", q (t.name), formatFrequency (f).c_str());
+            s.detail = fmt ("This region is %.1f dB above the track's own tonal balance. Mud between 250 and 500 Hz piles up across tracks and blurs the mix.", mudExcess);
+            s.steps = {
+                fmt ("On '%s', add a bell at %s, Q %.1f, cutting %.1f dB.", q (t.name), formatFrequency (f).c_str(), mudQ, -cut),
+                "Sweep it slowly between 250 and 500 Hz while the full mix plays and leave it where the track sounds clearest.",
+                "Judge it in the mix, not solo: the track may sound thinner alone but the mix gets clearer.",
+            };
+            s.action = { ActionType::EqBell, t.trackId, cut, f, mudQ };
+            out.push_back (std::move (s));
+        }
+    }
+
+}
+
+//==============================================================================
+// DYNAMICS (per track)
+bool isDrumRole (TrackRole r) noexcept { return r == TrackRole::Kick || r == TrackRole::Snare || r == TrackRole::Drums; }
+
+void dynamicsTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Suggestion>& out)
+{
+    if (! t.active)
+        return;
+
+    // Vocals and bass that jump around in level: compression evens them out.
+    if ((t.role == TrackRole::Vocal || t.role == TrackRole::Bass) && t.levelSwingLu > 0.0f
+        && t.levelSwingLu > threshold ("dyn.compress", idKey (t), cfg.levelSwingLu, cfg.levelSwingLu - 1.0f))
+    {
+        const bool vocal = t.role == TrackRole::Vocal;
+        auto s = make ("dyn.compress", idKey (t), Category::Dynamics, Severity::Info,
+                       std::min (1.0f, t.levelSwingLu / 9.0f), { &t });
+        s.title = fmt ("'%s' needs compression to sit steady", q (t.name));
+        s.detail = fmt ("Its loudness swings by about %.1f LU while it plays, so it %s.", t.levelSwingLu,
+                        vocal ? "drops under the mix on quiet words and jumps out on loud ones" : "makes the low end uneven and some notes disappear");
+        s.steps = {
+            fmt ("Insert a compressor on '%s': ratio %s, attack %s, release %s.", q (t.name),
+                 vocal ? "3:1" : "4:1", vocal ? "10-20 ms" : "20-30 ms", vocal ? "80-120 ms" : "100-150 ms"),
+            "Lower the threshold until the loudest parts get 3-6 dB of gain reduction, then make up the lost level.",
+            "Keep the attack slow enough that the start of each word or note still comes through.",
+            vocal ? std::string ("For more control without squashing, add a second, gentle compressor after it (2:1, 1-3 dB).")
+                  : std::string ("For more weight without squashing, blend in a heavily compressed parallel copy instead."),
+        };
+        out.push_back (std::move (s));
+    }
+
+    if (! isDrumRole (t.role))
+        return;
+
+    const float crest = t.maxPeakDb() - t.maxRmsDb();
+    if (crest < threshold ("dyn.squashed", idKey (t), cfg.squashedCrestDb, cfg.squashedCrestDb + 1.5f))
+    {
+        auto s = make ("dyn.squashed", idKey (t), Category::Dynamics, Severity::Warning, 0.65f, { &t });
+        s.title = fmt ("'%s' sounds squashed", q (t.name));
+        s.detail = fmt ("Peaks are only %.1f dB above the average level; punchy drums usually have 10 dB or more. The hits have lost their attack.", crest);
+        s.steps = {
+            fmt ("On the compressor or limiter on '%s', slow the attack to 20-30 ms so the start of each hit gets through.", q (t.name)),
+            "Back off the threshold until gain reduction is around 3-4 dB on the hits.",
+            "If you like the heavy compressed sound, put it on a parallel bus and blend it under the uncompressed drums instead.",
+        };
+        out.push_back (std::move (s));
+    }
+    else if (crest > threshold ("dyn.parallel", idKey (t), cfg.parallelCrestDb, cfg.parallelCrestDb - 2.0f))
+    {
+        auto s = make ("dyn.parallel", idKey (t), Category::Dynamics, Severity::Info, 0.45f, { &t });
+        s.title = fmt ("'%s' could use parallel compression for weight", q (t.name));
+        s.detail = fmt ("Peaks are %.1f dB above the average level: lots of attack but little body, so the drums can sound thin in a full mix.", crest);
+        s.steps = {
+            fmt ("Send '%s' to an aux and put a compressor on it: ratio 8:1 or more, fast attack, release around 100 ms.", q (t.name)),
+            "Squash it hard (10 dB or more of gain reduction).",
+            "Bring the aux fader up from silence until the drums feel fuller, keeping the original track's transients.",
+        };
+        out.push_back (std::move (s));
+    }
 }
 
 //==============================================================================
@@ -301,6 +419,45 @@ void stereoTrackRules (const TrackView& t, const RuleConfig& cfg, std::vector<Su
 {
     if (! t.active || t.numChannels < 2)
         return;
+
+    // Bass, kick and lead vocal belong in the centre.
+    if (t.role == TrackRole::Bass || t.role == TrackRole::Kick || t.role == TrackRole::Vocal)
+    {
+        const float balance = t.rmsDb[1] - t.rmsDb[0];   // > 0: leans right
+        if (std::abs (balance) > threshold ("pan.centre", idKey (t), cfg.offCentreDb, cfg.offCentreDb - 1.0f))
+        {
+            auto s = make ("pan.centre", idKey (t), Category::Panning, Severity::Warning, 0.75f, { &t });
+            s.title = fmt ("Centre '%s'", q (t.name));
+            s.detail = fmt ("It leans %.1f dB to the %s. %s should sit in the middle so the mix stays balanced and translates to mono and club systems.",
+                            std::abs (balance), balance > 0 ? "right" : "left", t.role == TrackRole::Vocal ? "The lead vocal" : "Kick and bass");
+            s.steps = {
+                fmt ("Set the pan of '%s' to centre (C).", q (t.name)),
+                "If it is a stereo recording, check that both sides have the same level and no stereo effect pushes it to one side.",
+                "Pan other instruments outward instead to make room around it.",
+            };
+            s.action.type = ActionType::Pan;
+            s.action.trackId = t.trackId;
+            s.action.pan = 0.0f;
+            out.push_back (std::move (s));
+        }
+    }
+
+    // A lead vocal with a lot of side energy usually has reverb or a stereo
+    // effect straight on its insert: depth works better from a send.
+    if (t.role == TrackRole::Vocal
+        && t.sideToMidDb > threshold ("depth.wet_vocal", idKey (t), cfg.wetVocalSideToMidDb, cfg.wetVocalSideToMidDb - 2.0f))
+    {
+        auto s = make ("depth.wet_vocal", idKey (t), Category::Depth, Severity::Info, 0.5f, { &t });
+        s.title = fmt ("'%s' is washed in reverb or stereo effects", q (t.name));
+        s.detail = fmt ("The side channel is only %.1f dB under the mid. A dry lead vocal is nearly mono, so this is most likely reverb, delay or a widener on the track itself.", -t.sideToMidDb);
+        s.steps = {
+            "Move the reverb from the vocal insert to a send (aux) and set it 100% wet there.",
+            "Add 20-40 ms of pre-delay so the words stay clear before the reverb blooms.",
+            "EQ the reverb return: high-pass around 300 Hz and low-pass around 6-8 kHz.",
+            "Or try a 1/8 or 1/4 note delay instead of reverb for space without clutter.",
+        };
+        out.push_back (std::move (s));
+    }
 
     const float lowShare = energyShareBelow (t.bands, 150.0f);
     const bool wideShown = threshold ("pan.wide_low_end", idKey (t), 0.0f, 1.0f) > 0.5f;
@@ -592,7 +749,31 @@ std::vector<Suggestion> RuleEngine::evaluateRaw (const MixSnapshot& mix, const R
     {
         gainRules (t, mix, cfg, out);
         eqTrackRules (t, cfg, out);
+        dynamicsTrackRules (t, cfg, out);
         stereoTrackRules (t, cfg, out);
+    }
+
+    // Most instruments have energy in the low-mids: name only the two
+    // muddiest tracks instead of a card for every one of them.
+    {
+        std::vector<size_t> mud;
+        for (size_t i = 0; i < out.size(); ++i)
+            if (out[i].ruleId == "eq.mud")
+                mud.push_back (i);
+        if (mud.size() > 2)
+        {
+            // Cards already on screen keep their place, so the choice doesn't flip.
+            auto shown = [&out] (size_t i) { return tShowing != nullptr && tShowing->count (out[i].key) > 0; };
+            std::stable_sort (mud.begin(), mud.end(), [&] (size_t x, size_t y)
+            {
+                if (shown (x) != shown (y)) return shown (x);
+                return out[x].confidence > out[y].confidence;
+            });
+            std::unordered_set<std::string> drop;
+            for (size_t i = 2; i < mud.size(); ++i)
+                drop.insert (out[mud[i]].key);
+            out.erase (std::remove_if (out.begin(), out.end(), [&drop] (const Suggestion& x) { return drop.count (x.key) > 0; }), out.end());
+        }
     }
 
     for (const auto& p : mix.pairs)
@@ -613,6 +794,56 @@ std::vector<Suggestion> RuleEngine::evaluateRaw (const MixSnapshot& mix, const R
 
 namespace
 {
+// Steps 5 and 6 of the workflow. Reverb and delay can't be measured reliably
+// from levels and spectra, so these are general advice rather than findings.
+std::vector<Suggestion> workflowTips (const MixSnapshot& mix)
+{
+    std::vector<Suggestion> tips;
+
+    const TrackView* vocal = nullptr;
+    for (const auto& t : mix.tracks)
+        if (t.role == TrackRole::Vocal && (vocal == nullptr || t.shortTermLufs > vocal->shortTermLufs))
+            vocal = &t;
+
+    {
+        Suggestion s;
+        s.ruleId = "depth.tips";
+        s.key = "depth.tips:mix";
+        s.category = Category::Depth;
+        s.step = MixStep::Depth;
+        s.severity = Severity::Info;
+        s.tip = true;
+        s.title = "Create space without clutter";
+        s.detail = "Put reverb and delay on sends (aux tracks) rather than on each track, so a few shared spaces glue the mix together.";
+        s.steps = {
+            vocal != nullptr ? fmt ("On the vocal reverb for '%s', set 20-40 ms of pre-delay so the words stay clear.", q (vocal->name))
+                             : std::string ("On vocal reverb, set 20-40 ms of pre-delay so the words stay clear."),
+            "EQ the reverb tails: high-pass the reverb return around 300 Hz and low-pass it around 6-8 kHz.",
+            "Try a 1/8 or 1/4 note delay instead of reverb on busy parts: it adds space and stays out of the way.",
+            "Keep bass and kick dry, or nearly so.",
+        };
+        tips.push_back (std::move (s));
+    }
+    {
+        Suggestion s;
+        s.ruleId = "tip.final";
+        s.key = "tip.final:mix";
+        s.category = Category::General;
+        s.step = MixStep::FinalTip;
+        s.severity = Severity::Info;
+        s.tip = true;
+        s.title = "Trust your ears";
+        s.detail = "The cards above are a guide, not rules. If a change sounds worse, undo it.";
+        s.steps = {
+            "Compare your mix with a finished song you like, at the same loudness.",
+            "Listen on headphones, small speakers and your phone, not just your monitors.",
+            "Take breaks: after a while your ears get used to problems.",
+        };
+        tips.push_back (std::move (s));
+    }
+    return tips;
+}
+
 // Is any track this card is about playing right now? Tracks that left the
 // session (plugin removed or bypassed) count as playing, so their cards can
 // clear; tracks that are present but silent freeze their cards.
@@ -695,8 +926,15 @@ std::vector<Suggestion> RuleEngine::evaluate (const MixSnapshot& snapshot)
 
     // Stable order: cards never jump around because a confidence wobbled.
     // Resolving cards sink to the bottom of their severity group.
+    if (config.workflowTips && (! snapshot.tracks.empty() || snapshot.hasMaster))
+        for (auto& tip : workflowTips (snapshot))
+            if (dismissed.count (tip.key) == 0)
+                out.push_back (std::move (tip));
+
+    // Grouped by mix step first, so the list reads in the order to work in.
     std::sort (out.begin(), out.end(), [] (const Suggestion& x, const Suggestion& y)
     {
+        if (x.step != y.step)           return x.step < y.step;
         if (x.severity != y.severity)   return x.severity > y.severity;
         if (x.resolving != y.resolving) return ! x.resolving;
         return x.key < y.key;

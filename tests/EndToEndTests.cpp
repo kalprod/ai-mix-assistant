@@ -62,6 +62,20 @@ TEST_CASE ("e2e: synthetic session -> listeners -> bus -> master engine -> expec
     // Machine-readable output for the UI / logs.
     std::ofstream ("e2e_suggestions.json") << toJson (report->suggestions);
 
+    // The loudness spread used for compression advice is measured once a part has played a while.
+    for (auto& t : report->tracks)
+        if (t.view.name == "Lead Vox")
+        {
+            std::printf ("    Lead Vox loudness swing %.1f LU\n", t.view.levelSwingLu);
+            CHECK (t.view.levelSwingLu > 0.0f);
+        }
+
+    // Cards are grouped by mix step, and the two workflow tips close the list.
+    for (size_t i = 1; i < report->suggestions.size(); ++i)
+        CHECK (report->suggestions[i - 1].step <= report->suggestions[i].step);
+    CHECK (find (*report, "depth.tips") != nullptr);
+    CHECK (find (*report, "tip.final") != nullptr);
+
     // The master's own analyser fed the mix-bus summary.
     CHECK (report->master.view.integratedLufs > -40.0f);
 }

@@ -1,33 +1,33 @@
 [PASS] ring: FIFO order, capacity and empty/full behaviour                 0.0 ms
-[PASS] ring: index wrap-around past 2^32 boundary stays consistent         1.1 ms
-[PASS] ring: concurrent producer/consumer delivers 2M items in order with no loss    188.1 ms
-[PASS] bus: slots can be claimed until full, released and re-claimed       3.4 ms
-[PASS] bus: publisher RAII claims a slot and frees it on destruction       3.4 ms
-[PASS] bus: only one master engine at a time, takeover after timeout       3.3 ms
-[PASS] bus/shm: two mappings of the same segment see each other's frames      4.1 ms
-[PASS] bus/shm: frames cross a real process boundary; dead owner's slot is reclaimed      5.2 ms
-[PASS] bus/shm: incompatible segment from another build falls back to process-local      2.6 ms
-[PASS] fft: forward + inverse round-trips                                  0.2 ms
+[PASS] ring: index wrap-around past 2^32 boundary stays consistent         1.0 ms
+[PASS] ring: concurrent producer/consumer delivers 2M items in order with no loss    169.0 ms
+[PASS] bus: slots can be claimed until full, released and re-claimed       3.2 ms
+[PASS] bus: publisher RAII claims a slot and frees it on destruction       3.2 ms
+[PASS] bus: only one master engine at a time, takeover after timeout       3.0 ms
+[PASS] bus/shm: two mappings of the same segment see each other's frames      3.8 ms
+[PASS] bus/shm: frames cross a real process boundary; dead owner's slot is reclaimed      4.8 ms
+[PASS] bus/shm: incompatible segment from another build falls back to process-local      2.4 ms
+[PASS] fft: forward + inverse round-trips                                  0.1 ms
 [PASS] fft: bin-centred full-scale sine reads 0 dB in the right bin        0.1 ms
-[PASS] lufs: 997 Hz full-scale sine in both channels reads 0.0 LUFS (BS.1770 calibration)     23.0 ms
-[PASS] lufs: EBU Tech 3341 case 1 (stereo 1 kHz at -23 dBFS reads -23 LUFS)     24.5 ms
-[PASS] lufs: EBU Tech 3341 case 3 relative gate (-36 / -23 / -36 dBFS -> -23 LUFS)     88.6 ms
-[PASS] lufs: absolute gate ignores silence; short-term follows the signal    289.7 ms
+[PASS] lufs: 997 Hz full-scale sine in both channels reads 0.0 LUFS (BS.1770 calibration)     22.4 ms
+[PASS] lufs: EBU Tech 3341 case 1 (stereo 1 kHz at -23 dBFS reads -23 LUFS)     23.2 ms
+[PASS] lufs: EBU Tech 3341 case 3 relative gate (-36 / -23 / -36 dBFS -> -23 LUFS)     91.1 ms
+[PASS] lufs: absolute gate ignores silence; short-term follows the signal    283.4 ms
 [PASS] masking: identical spectra overlap fully, disjoint spectra not at all      0.5 ms
-[PASS] masking: partially overlapping material scores in between           0.3 ms
+[PASS] masking: partially overlapping material scores in between           0.2 ms
 [PASS] energy share below a frequency                                      0.2 ms
-[PASS] mid/side and correlation: mono, anti-phase and decorrelated signals      0.9 ms
-[PASS] delay: integer offsets either direction, with and without PHAT      1.8 ms
-[PASS] delay: sub-sample offset on band-limited material                   2.7 ms
-[PASS] delay: polarity inversion and unrelated signals                     0.7 ms
+[PASS] mid/side and correlation: mono, anti-phase and decorrelated signals      0.8 ms
+[PASS] delay: integer offsets either direction, with and without PHAT      1.7 ms
+[PASS] delay: sub-sample offset on band-limited material                   2.6 ms
+[PASS] delay: polarity inversion and unrelated signals                     0.6 ms
 [PASS] analyzer: process block is non-destructive (bit-identical input)      0.7 ms
-[PASS] analyzer: audio-thread path performs zero heap allocations         23.0 ms
-[PASS] analyzer: frames are aligned to the timeline grid; first frame after a seek is flagged partial      0.6 ms
+[PASS] analyzer: audio-thread path performs zero heap allocations         20.7 ms
+[PASS] analyzer: frames are aligned to the timeline grid; first frame after a seek is flagged partial      0.5 ms
     short-term -3.84 LUFS
-[PASS] analyzer: payload carries correct RMS, peak, correlation and spectrum      7.4 ms
-[PASS] analyzer: mono input, silence flag, and drop-when-full with no FFT work      0.6 ms
+[PASS] analyzer: payload carries correct RMS, peak, correlation and spectrum      7.0 ms
+[PASS] analyzer: mono input, silence flag, and drop-when-full with no FFT work      0.4 ms
 [PASS] analyzer: track name handoff truncates safely and never splits UTF-8      0.0 ms
-[PASS] rules: clipping track gets a critical gain cut that lands at -1 dBFS      0.1 ms
+[PASS] rules: clipping track gets a critical gain cut that lands at -1 dBFS      0.0 ms
 [PASS] rules: masking cut goes on the lower-priority track at the clashing band      0.0 ms
 [PASS] rules: two centred mono instruments that mask get a pan suggestion      0.0 ms
 [PASS] rules: stable inter-track delay produces a time-align action on the earlier track      0.0 ms
@@ -35,10 +35,12 @@
 [PASS] rules: negative stereo correlation and wide low end on a single track      0.0 ms
 [PASS] rules: inactive tracks produce nothing                              0.0 ms
 [PASS] rules: cards stay until the problem is fixed, freeze in silence, then clear      0.1 ms
-[PASS] rules: an intermittent condition shows one steady card instead of blinking      0.7 ms
-[PASS] rules: a measurement hovering at a threshold doesn't toggle its card      0.3 ms
+[PASS] rules: an intermittent condition shows one steady card instead of blinking      0.8 ms
+[PASS] rules: a measurement hovering at a threshold doesn't toggle its card      0.2 ms
 [PASS] rules: with only the mix bus, tonal problems are fixed on the mix bus      0.0 ms
 [PASS] rules: results sorted by severity, JSON output escapes names        0.0 ms
+[PASS] rules: workflow steps - low peaks, compression, squashed drums, centring      0.0 ms
+[PASS] rules: cards come out in workflow order, tips last                  0.0 ms
     kick             -> Kick
     808              -> Bass
     snare            -> Snare
@@ -51,29 +53,36 @@
     strummed guitar  -> Unknown
     piano            -> Unknown
     synth lead       -> Unknown
-[PASS] auto role: kick, snare, hats, loop, bass, vocal and instruments are recognised   1316.0 ms
-[PASS] auto role: the result doesn't depend on track level or host block size   3941.9 ms
-[PASS] auto role: waits for enough signal, ignores silence, and doesn't flip-flop    126.1 ms
-    12 suggestions after 10 s of audio:
+[PASS] auto role: kick, snare, hats, loop, bass, vocal and instruments are recognised   1301.2 ms
+[PASS] auto role: the result doesn't depend on track level or host block size   3903.4 ms
+[PASS] auto role: waits for enough signal, ignores silence, and doesn't flip-flop    124.6 ms
+    16 suggestions after 10 s of audio:
       [critical] gain.clipping            'Synth Lead' is clipping  ->  Gain -1.8 dB
-      [critical] phase.track_correlation  'Pad' is out of phase between left and right  ->  Invert polarity
+      [info    ] mix.loudness             Mix is louder than the loudness target  ->  Gain -3.4 dB
       [warning ] eq.low_end               Low-end build-up on 'Lead Vox'  ->  High-pass @ 100 Hz
       [warning ] eq.masking               'Bass' and 'Kick' mask each other around 45 Hz  ->  EQ bell -4.0 dB @ 45 Hz, Q 0.6
       [warning ] eq.masking               'Keys' and 'Guitar' mask each other around 245 Hz  ->  EQ bell -4.0 dB @ 245 Hz, Q 2.4
+      [info    ] eq.harsh                 'Synth Lead' is harsh around 2.5 kHz  ->  EQ bell -6.0 dB @ 2.5 kHz, Q 4.0
+      [info    ] eq.mix_harsh             Mix is harsh around 2.5 kHz  ->  EQ bell -5.0 dB @ 2.5 kHz, Q 4.0
+      [info    ] eq.mud                   'OH' is muddy around 245 Hz  ->  EQ bell -5.0 dB @ 245 Hz, Q 2.4
+      [info    ] eq.mud                   'Room' is muddy around 245 Hz  ->  EQ bell -5.0 dB @ 245 Hz, Q 2.4
+      [critical] phase.track_correlation  'Pad' is out of phase between left and right  ->  Invert polarity
       [warning ] pan.wide_low_end         Stereo low end on 'Bass'  ->  Mono below 120 Hz
       [warning ] phase.time_align         'OH' and 'Room' are 0.77 ms out of time  ->  Delay 37.0 samples (0.77 ms)
       [warning ] phase.track_correlation  'Bass' is out of phase between left and right  ->  Invert polarity
-      [info    ] eq.harsh                 'Synth Lead' is harsh around 2.5 kHz  ->  EQ bell -6.0 dB @ 2.5 kHz, Q 4.0
-      [info    ] eq.mix_harsh             Mix is harsh around 2.5 kHz  ->  EQ bell -5.0 dB @ 2.5 kHz, Q 4.0
-      [info    ] mix.loudness             Mix is louder than the loudness target  ->  Gain -3.4 dB
       [info    ] pan.separate             Pan 'Guitar' and 'Keys' apart  ->  Pan L 30%
-[PASS] e2e: synthetic session -> listeners -> bus -> master engine -> expected diagnoses   1355.6 ms
-[PASS] e2e: second master engine on the same bus stays passive           146.6 ms
-[PASS] e2e: engine thread runs and publishes reports                      25.2 ms
-[PASS] e2e: Auto role tracks are detected by the master engine and reported back to the Listener   1138.8 ms
-    2 cards from the mix bus alone:
-      eq.mix_harsh       Mix is harsh around 2.5 kHz  ->  EQ bell -2.9 dB @ 2.5 kHz, Q 4.0
+      [info    ] depth.tips               Create space without clutter  ->  
+      [info    ] tip.final                Trust your ears  ->  
+    Lead Vox loudness swing 0.5 LU
+[PASS] e2e: synthetic session -> listeners -> bus -> master engine -> expected diagnoses   1297.3 ms
+[PASS] e2e: second master engine on the same bus stays passive           136.3 ms
+[PASS] e2e: engine thread runs and publishes reports                      22.3 ms
+[PASS] e2e: Auto role tracks are detected by the master engine and reported back to the Listener   1055.7 ms
+    4 cards from the mix bus alone:
       mix.loudness       Mix is louder than the loudness target  ->  Gain -3.4 dB
-[PASS] e2e: master bus only gives steady, useful cards on a full mix    2377.2 ms
+      eq.mix_harsh       Mix is harsh around 2.5 kHz  ->  EQ bell -2.9 dB @ 2.5 kHz, Q 4.0
+      depth.tips         Create space without clutter  ->  
+      tip.final          Trust your ears  ->  
+[PASS] e2e: master bus only gives steady, useful cards on a full mix    2201.4 ms
 
-48 tests, 0 failed checks
+50 tests, 0 failed checks

@@ -43,6 +43,24 @@ private:
     juce::TextButton dismissButton { "Dismiss" };
 };
 
+// Numbered heading for one step of the mixing workflow, with what the step is
+// about and whether anything was found for it.
+class StepHeader final : public juce::Component
+{
+public:
+    explicit StepHeader (MixStep s) : step (s) {}
+
+    void setCounts (int problems, int tips) { problemCount = problems; tipCount = tips; repaint(); }
+    int getHeightForWidth (int width) const;
+    MixStep getStep() const noexcept { return step; }
+
+    void paint (juce::Graphics&) override;
+
+private:
+    MixStep step;
+    int problemCount = 0, tipCount = 0;
+};
+
 class DiagnosticPanel final : public juce::Component
 {
 public:
@@ -70,7 +88,7 @@ private:
     bool passesFilter (const Suggestion& s) const;
 
     std::vector<Suggestion> all;
-    std::optional<Category> categoryFilter;
+    std::optional<MixStep> stepFilter;
     int64_t trackFilter = -1;
 
     juce::OwnedArray<juce::TextButton> filterButtons;
@@ -79,6 +97,7 @@ private:
     juce::Viewport viewport;
     juce::Component content;
     juce::OwnedArray<DiagnosticCard> cards;
+    juce::OwnedArray<StepHeader> headers;   // one per MixStep, in order
     juce::Label emptyLabel;
 };
 

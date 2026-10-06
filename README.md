@@ -46,6 +46,17 @@ Use `-DAIMIX_JUCE_PATH=/path/to/JUCE` to build against a local JUCE checkout.
 2. Insert one more instance on the mix bus and set **Mode** to **Master Engine**.
 3. Play the session. A card appears once a problem has been measured for about a quarter of a second, and stays until it is fixed: when the problem stops being measured the card turns green ("looks fixed") and disappears after about 3 seconds of playback without it. Stopping playback freezes the cards rather than clearing them. Click a strip to filter cards to that track; **Dismiss** hides a card for the session. **Enlarge** gives the advice the whole window (**Shrink** brings the channel rack back).
 
+The advice is grouped into the order to mix in, so you can work top to bottom:
+
+1. **Gain staging**: clipping, tracks recorded too hot or too low (peaks around -10 to 0 dB), mix headroom and loudness.
+2. **EQ**: high-pass for non-bass tracks, mud at 250-500 Hz, harshness, tracks masking each other.
+3. **Dynamics**: vocals and bass that need compression, squashed drums, drums that would gain weight from parallel compression, an over-compressed mix.
+4. **Stereo placement**: bass, kick and vocal off centre, stereo low end, phase problems, mono compatibility, tracks to pan apart.
+5. **Depth**: a vocal drowned in reverb on its insert, plus general reverb and delay tips (the plugin can't measure reverb itself).
+6. **Final tip**: trust your ears.
+
+Steps 3 and 4 need AI Mix Assistant on the individual tracks; the mix bus alone covers steps 1, 2 and mono/width.
+
 **Only one instance, on the mix bus?** That works too and gives loudness, headroom, stereo/mono and overall tone (muddy, harsh) advice for the whole mix, with fixes on the mix bus. Advice about individual instruments, and which tracks clash, needs a Listener on those tracks.
 
 Track names come from the host where it supports it (VST3, AU); the **Track** field overrides it.

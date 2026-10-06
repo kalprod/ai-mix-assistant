@@ -286,6 +286,11 @@ void renderMasterSnapshot (const juce::File& outDir)
         {
             enlarge->onClick();
             savePng (*editor, outDir.getChildFile ("ui_master_enlarged.png"));
+            // Tall window: the whole step-by-step list at once.
+            editor->setSize (1400, 1700);
+            ed->refresh();
+            savePng (*editor, outDir.getChildFile ("ui_master_steps.png"));
+            editor->setSize (1400, 900);
             enlarge->onClick();
         }
         check (findButton (*editor, "Enlarge") != nullptr, "advice panel can be enlarged and shrunk again");
@@ -299,6 +304,17 @@ void renderMasterSnapshot (const juce::File& outDir)
         ed->setReportOverride (busRun.engine->getLatestReport());
         ed->refresh();
         savePng (*editor, outDir.getChildFile ("ui_master_bus_only.png"));
+
+        // Enlarged and tall: every workflow step at once.
+        if (auto* enlarge = findButton (*editor, "Enlarge"))
+        {
+            enlarge->onClick();
+            editor->setSize (1400, 1700);
+            ed->refresh();
+            savePng (*editor, outDir.getChildFile ("ui_master_bus_only_steps.png"));
+            enlarge->onClick();
+            editor->setSize (1400, 900);
+        }
     }
 
     juce::FileOutputStream json (outDir.getChildFile ("synthetic_session_suggestions.json"));

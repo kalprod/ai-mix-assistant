@@ -24,8 +24,65 @@ const char* toString (Category c) noexcept
         case Category::Eq:      return "eq";
         case Category::Panning: return "panning";
         case Category::Phase:   return "phase";
+        case Category::Dynamics: return "dynamics";
+        case Category::Depth:   return "depth";
+        case Category::General: return "general";
     }
     return "gain";
+}
+
+const char* toString (MixStep s) noexcept
+{
+    switch (s)
+    {
+        case MixStep::GainStaging: return "gain_staging";
+        case MixStep::Eq:          return "eq";
+        case MixStep::Dynamics:    return "dynamics";
+        case MixStep::Stereo:      return "stereo";
+        case MixStep::Depth:       return "depth";
+        case MixStep::FinalTip:    return "final_tip";
+    }
+    return "gain_staging";
+}
+
+const char* stepTitle (MixStep s) noexcept
+{
+    switch (s)
+    {
+        case MixStep::GainStaging: return "Gain staging";
+        case MixStep::Eq:          return "EQ";
+        case MixStep::Dynamics:    return "Dynamics";
+        case MixStep::Stereo:      return "Stereo placement";
+        case MixStep::Depth:       return "Depth";
+        case MixStep::FinalTip:    return "Final tip";
+    }
+    return "";
+}
+
+const char* stepSummary (MixStep s) noexcept
+{
+    switch (s)
+    {
+        case MixStep::GainStaging: return "Set levels first. Keep peaks between about -10 and 0 dB to avoid clipping and leave headroom.";
+        case MixStep::Eq:          return "Remove unwanted frequencies. High-pass non-bass sounds and cut mud (around 250-500 Hz) for clarity.";
+        case MixStep::Dynamics:    return "Compression controls levels. Slow attack keeps transients; parallel compression adds weight without squashing.";
+        case MixStep::Stereo:      return "Centre bass and vocals, pan other elements outward, and always check the mix in mono.";
+        case MixStep::Depth:       return "Create space without clutter: pre-delay on vocal reverb, EQ the reverb tails, try delay instead of reverb.";
+        case MixStep::FinalTip:    return "Every track is different. Use this as a guide, trust your ears and tweak as needed.";
+    }
+    return "";
+}
+
+MixStep stepForRule (const std::string& id) noexcept
+{
+    auto starts = [&id] (const char* prefix) { return id.rfind (prefix, 0) == 0; };
+    if (id == "mix.mono_compat" || id == "mix.too_wide" || starts ("pan.") || starts ("phase."))
+        return MixStep::Stereo;
+    if (starts ("eq."))    return MixStep::Eq;
+    if (starts ("dyn."))   return MixStep::Dynamics;
+    if (starts ("depth.")) return MixStep::Depth;
+    if (starts ("tip."))   return MixStep::FinalTip;
+    return MixStep::GainStaging;   // gain.*, mix.headroom, mix.loudness
 }
 
 const char* toString (ActionType a) noexcept
@@ -124,6 +181,8 @@ std::string toJson (const Suggestion& s)
     appendEscaped (o, s.key);
     o += ",\"rule\":";       appendEscaped (o, s.ruleId);
     o += ",\"category\":";   appendEscaped (o, toString (s.category));
+    o += ",\"step\":";       appendNumber (o, (int) s.step);
+    if (s.tip) o += ",\"tip\":true";
     o += ",\"severity\":";   appendEscaped (o, toString (s.severity));
     o += ",\"confidence\":"; appendNumber (o, s.confidence);
 

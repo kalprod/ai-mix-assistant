@@ -302,3 +302,73 @@ TEST_CASE ("rules: results sorted by severity, JSON output escapes names")
     CHECK (json.find ("\"severity\":\"critical\"") != std::string::npos);
     CHECK (json.find ("\"type\":\"adjust_gain\"") != std::string::npos);
 }
+
+TEST_CASE ("rules: workflow steps - low peaks, compression, squashed drums, centring")
+{
+    MixSnapshot mix;
+    auto quiet = track (1, "Guitar", TrackRole::Guitar);
+    quiet.peakDb[0] = quiet.peakDb[1] = -26.0f;
+    quiet.rmsDb[0] = quiet.rmsDb[1] = -38.0f;
+    auto vox = track (2, "Vox", TrackRole::Vocal);
+    vox.levelSwingLu = 6.5f;
+    vox.rmsDb[0] = -24.0f;                   // leans right by 4 dB
+    auto drums = track (3, "Drums", TrackRole::Drums);
+    drums.peakDb[0] = drums.peakDb[1] = -12.0f;
+    drums.rmsDb[0] = drums.rmsDb[1] = -17.0f;   // 5 dB crest: squashed
+    mix.tracks = { quiet, vox, drums };
+
+    const auto out = RuleEngine::evaluateRaw (mix, {});
+    auto* low = find (out, "gain.low_peaks");
+    REQUIRE (low != nullptr);
+    CHECK (low->step == MixStep::GainStaging);
+    CHECK_NEAR (low->action.gainDb, 16.0, 0.01);
+    auto* comp = find (out, "dyn.compress");
+    REQUIRE (comp != nullptr);
+    CHECK (comp->step == MixStep::Dynamics);
+    CHECK (comp->trackNames[0] == "Vox");
+    auto* sq = find (out, "dyn.squashed");
+    REQUIRE (sq != nullptr);
+    CHECK (sq->trackNames[0] == "Drums");
+    auto* centre = find (out, "pan.centre");
+    REQUIRE (centre != nullptr);
+    CHECK (centre->step == MixStep::Stereo);
+    CHECK (centre->action.type == ActionType::Pan);
+
+    // A steady, centred vocal and punchy drums get none of these.
+    vox.levelSwingLu = 2.0f;
+    vox.rmsDb[0] = -20.0f;
+    drums.rmsDb[0] = drums.rmsDb[1] = -24.0f;
+    mix.tracks = { vox, drums };
+    const auto clean = RuleEngine::evaluateRaw (mix, {});
+    CHECK (find (clean, "dyn.compress") == nullptr);
+    CHECK (find (clean, "dyn.squashed") == nullptr);
+    CHECK (find (clean, "pan.centre") == nullptr);
+}
+
+TEST_CASE ("rules: cards come out in workflow order, tips last")
+{
+    MixSnapshot mix;
+    auto a = track (1, "Pad", TrackRole::Synth);
+    a.correlation = -0.6f;                    // step 4, critical
+    auto b = track (2, "Synth", TrackRole::Synth);
+    b.peakDb[0] = 0.5f;                       // step 1, critical
+    auto c = track (3, "Vox", TrackRole::Vocal);
+    c.levelSwingLu = 7.0f;                    // step 3
+    mix.tracks = { a, b, c };
+
+    RuleConfig cfg;
+    cfg.debounceTicks = 1;
+    cfg.workflowTips = true;
+    RuleEngine engine (cfg);
+    const auto out = engine.evaluate (mix);
+    REQUIRE (out.size() >= 5);
+    for (size_t i = 1; i < out.size(); ++i)
+        CHECK (out[i - 1].step <= out[i].step);
+    CHECK (out.front().ruleId == "gain.clipping");
+    CHECK (out[out.size() - 2].step == MixStep::Depth);
+    CHECK (out.back().ruleId == "tip.final");
+    CHECK (out.back().tip);
+
+    engine.dismiss ("tip.final:mix");
+    CHECK (find (engine.evaluate (mix), "tip.final") == nullptr);
+}
