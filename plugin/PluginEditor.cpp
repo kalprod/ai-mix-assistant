@@ -4,18 +4,19 @@ using namespace aimix::ui;
 
 AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), processor (p)
 {
+    setLookAndFeel (&lookAndFeel);
     auto styleCombo = [] (juce::ComboBox& box)
     {
-        box.setColour (juce::ComboBox::backgroundColourId, colours::panel);
+        box.setColour (juce::ComboBox::backgroundColourId, colours::panelRaised);
         box.setColour (juce::ComboBox::outlineColourId, colours::outline);
         box.setColour (juce::ComboBox::textColourId, colours::text);
-        box.setColour (juce::ComboBox::arrowColourId, colours::textDim);
+        box.setColour (juce::ComboBox::arrowColourId, colours::accent);
     };
     auto styleLabel = [] (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (font (11.0f, true));
-        l.setColour (juce::Label::textColourId, colours::textFaint);
+        l.setFont (font (11.5f, true));
+        l.setColour (juce::Label::textColourId, colours::textDim);
         l.setJustificationType (juce::Justification::centredRight);
     };
 
@@ -31,13 +32,13 @@ AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), proces
     roleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (processor.parameters, "role", roleBox);
     modeBox.onChange = [this] { processor.syncModeNow(); updateModeVisibility(); };
 
-    nameEditor.setText (processor.getTrackNameOverride(), false);
     nameEditor.setTextToShowWhenEmpty ("name from host", colours::textFaint);
     nameEditor.setJustification (juce::Justification::centredLeft);
     nameEditor.setIndents (8, 0);
-    nameEditor.setColour (juce::TextEditor::backgroundColourId, colours::panel);
+    nameEditor.setColour (juce::TextEditor::backgroundColourId, colours::panelRaised);
     nameEditor.setColour (juce::TextEditor::outlineColourId, colours::outline);
     nameEditor.setColour (juce::TextEditor::textColourId, colours::text);
+    nameEditor.setText (processor.getTrackNameOverride(), false);   // after the colours: text takes the colour set when added
     nameEditor.onReturnKey = nameEditor.onFocusLost = [this] { processor.setTrackNameOverride (nameEditor.getText()); };
 
     for (juce::Component* c : { (juce::Component*) &modeBox, (juce::Component*) &roleBox, (juce::Component*) &nameEditor,
@@ -49,14 +50,18 @@ AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), proces
     masterView.onDismiss = [this] (const std::string& key) { processor.dismissSuggestion (key); };
 
     setResizable (true, true);
-    setResizeLimits (880, 560, 2400, 1600);
-    setSize (1240, 760);
+    setResizeLimits (960, 620, 2600, 1700);
+    setSize (1400, 900);
 
     updateModeVisibility();
     startTimerHz (30);
 }
 
-AIMixEditor::~AIMixEditor() { stopTimer(); }
+AIMixEditor::~AIMixEditor()
+{
+    stopTimer();
+    setLookAndFeel (nullptr);
+}
 
 void AIMixEditor::updateModeVisibility()
 {
@@ -109,26 +114,41 @@ void AIMixEditor::paint (juce::Graphics& g)
 {
     g.fillAll (colours::background);
 
-    auto header = getLocalBounds().removeFromTop (52).toFloat();
+    auto header = getLocalBounds().removeFromTop (kHeaderHeight).toFloat();
     g.setColour (colours::panel);
     g.fillRect (header);
     g.setColour (colours::outline);
     g.fillRect (header.removeFromBottom (1.0f));
 
+    // Logo with a black-to-red underline, like the badge on the hardware.
+    const auto logoFont = font (22.0f, true);
+    const juce::String logo ("AI MIX ASSISTANT");
+    const float logoW = juce::GlyphArrangement::getStringWidth (logoFont, logo);
     g.setColour (colours::text);
-    g.setFont (font (17.0f, true));
-    g.drawText ("AI Mix Assistant", juce::Rectangle<float> (18.0f, 0.0f, 200.0f, 52.0f), juce::Justification::centredLeft);
-    g.setColour (colours::textFaint);
-    g.setFont (font (12.0f));
+    g.setFont (logoFont);
+    g.drawText (logo, juce::Rectangle<float> (20.0f, 8.0f, logoW + 4.0f, 34.0f), juce::Justification::centredLeft);
+    auto underline = juce::Rectangle<float> (20.0f, 42.0f, logoW, 4.0f);
+    g.setGradientFill (juce::ColourGradient (colours::text, underline.getX(), 0.0f, colours::accent, underline.getRight(), 0.0f, false));
+    g.fillRect (underline);
+
+    // Small dark display with what this instance is doing.
     const bool master = shownMode == AIMixProcessor::Mode::Master;
-    g.drawText (master ? "Master Engine" : processor.getEffectiveTrackName(),
-                juce::Rectangle<float> (176.0f, 0.0f, 220.0f, 52.0f), juce::Justification::centredLeft);
+    auto display = juce::Rectangle<float> (logoW + 44.0f, 14.0f, 230.0f, 34.0f);
+    if (display.getRight() < (float) modeLabel.getX() - 8.0f)
+    {
+        g.setColour (colours::screen);
+        g.fillRoundedRectangle (display, 6.0f);
+        g.setColour (colours::screenText);
+        g.setFont (monoFont (14.0f));
+        g.drawFittedText (master ? juce::String ("MASTER ENGINE") : processor.getEffectiveTrackName().toUpperCase(),
+                          display.reduced (12.0f, 0.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
+    }
 }
 
 void AIMixEditor::resized()
 {
     auto r = getLocalBounds();
-    auto header = r.removeFromTop (52).reduced (16, 12);
+    auto header = r.removeFromTop (kHeaderHeight).reduced (20, 15);
 
     nameEditor.setBounds (header.removeFromRight (170));
     nameLabel.setBounds (header.removeFromRight (56));
@@ -139,7 +159,7 @@ void AIMixEditor::resized()
     modeBox.setBounds (header.removeFromRight (150));
     modeLabel.setBounds (header.removeFromRight (52));
 
-    auto body = r.reduced (16, 14);
+    auto body = r.reduced (20, 16);
     listenerView.setBounds (body);
     masterView.setBounds (body);
 }

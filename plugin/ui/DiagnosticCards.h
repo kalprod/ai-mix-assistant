@@ -53,10 +53,18 @@ public:
 
     std::function<void (const std::string&)> onDismiss;
 
+    // The Enlarge button: the owner gives the panel the whole window while
+    // expanded, so the advice is easy to read.
+    void setExpanded (bool shouldExpand);
+    bool isExpanded() const noexcept { return expanded; }
+    std::function<void (bool)> onExpandChanged;
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
+    static constexpr int kHeaderHeight = 34;
+
     void rebuild();
     void layoutCards();
     bool passesFilter (const Suggestion& s) const;
@@ -66,6 +74,8 @@ private:
     int64_t trackFilter = -1;
 
     juce::OwnedArray<juce::TextButton> filterButtons;
+    juce::TextButton expandButton { "Enlarge" };
+    bool expanded = false;
     juce::Viewport viewport;
     juce::Component content;
     juce::OwnedArray<DiagnosticCard> cards;

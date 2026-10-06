@@ -237,6 +237,18 @@ std::shared_ptr<const aimix::MixReport> checkMultiInstance (const juce::File& ou
     return report;
 }
 
+juce::TextButton* findButton (juce::Component& root, const juce::String& text)
+{
+    for (auto* child : root.getChildren())
+    {
+        if (auto* b = dynamic_cast<juce::TextButton*> (child); b != nullptr && b->getButtonText() == text)
+            return b;
+        if (auto* found = findButton (*child, text))
+            return found;
+    }
+    return nullptr;
+}
+
 void renderMasterSnapshot (const juce::File& outDir)
 {
     // Full synthetic session through the real pipeline, shown in the real editor.
@@ -252,7 +264,7 @@ void renderMasterSnapshot (const juce::File& outDir)
     ed->refresh();
     savePng (*editor, outDir.getChildFile ("ui_master.png"));
 
-    editor->setSize (900, 600);   // smallest supported size
+    editor->setSize (960, 620);   // smallest supported size
     ed->refresh();
     savePng (*editor, outDir.getChildFile ("ui_master_small.png"));
 
@@ -264,10 +276,19 @@ void renderMasterSnapshot (const juce::File& outDir)
         auto copy = std::make_shared<aimix::MixReport> (*autoRun.engine->getLatestReport());
         if (copy->suggestions.size() > 1)
             copy->suggestions[1].resolving = true;
-        editor->setSize (1240, 760);
+        editor->setSize (1400, 900);
         ed->setReportOverride (copy);
         ed->refresh();
         savePng (*editor, outDir.getChildFile ("ui_master_auto_roles.png"));
+
+        // The advice enlarged to the whole window.
+        if (auto* enlarge = findButton (*editor, "Enlarge"))
+        {
+            enlarge->onClick();
+            savePng (*editor, outDir.getChildFile ("ui_master_enlarged.png"));
+            enlarge->onClick();
+        }
+        check (findButton (*editor, "Enlarge") != nullptr, "advice panel can be enlarged and shrunk again");
     }
 
     // Only the mix-bus instance: what a single plugin on the master shows.

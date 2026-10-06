@@ -21,7 +21,7 @@ public:
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override { if (onClick) onClick(); }
 
-    static constexpr int kWidth = 112;
+    static constexpr int kWidth = 118;
 
 private:
     void drawMeter (juce::Graphics&, juce::Rectangle<float>, float rmsDb, float peakDb) const;

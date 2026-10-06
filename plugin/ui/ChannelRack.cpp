@@ -30,14 +30,19 @@ void ChannelStrip::paint (juce::Graphics& g)
     const auto& v = data.view;
     const float alpha = data.stale ? 0.4f : 1.0f;
 
-    g.setColour ((master ? colours::panelRaised : colours::panel).withMultipliedAlpha (alpha));
-    g.fillRoundedRectangle (bounds, 6.0f);
-    g.setColour (isSelected ? colours::accent : colours::outline);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, isSelected ? 2.0f : 1.0f);
-
-    // role colour cap
-    g.setColour (roleColour (v.role).withMultipliedAlpha (alpha));
-    g.fillRoundedRectangle (bounds.withHeight (4.0f), 2.0f);
+    // Drawn like a lit pad: cream face with a coloured ring for the role.
+    const auto ring = master ? colours::accent : roleColour (v.role);
+    g.setColour (colours::panelRaised.withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (bounds, 8.0f);
+    g.setColour (ring.withMultipliedAlpha (alpha * 0.18f));
+    g.drawRoundedRectangle (bounds.reduced (2.5f), 7.0f, 4.0f);
+    g.setColour (ring.withMultipliedAlpha (alpha));
+    g.drawRoundedRectangle (bounds.reduced (1.0f), 8.0f, 2.0f);
+    if (isSelected)
+    {
+        g.setColour (colours::text);
+        g.drawRoundedRectangle (bounds.reduced (4.5f), 6.0f, 1.5f);
+    }
 
     auto inner = bounds.reduced (8.0f, 0.0f);
 
@@ -62,7 +67,7 @@ void ChannelStrip::paint (juce::Graphics& g)
         auto badge = juce::Rectangle<float> (bounds.getRight() - 24.0f, 9.0f, 18.0f, 18.0f);
         g.setColour (severityColour (issues.worst));
         g.fillEllipse (badge);
-        g.setColour (juce::Colours::white);
+        g.setColour (colours::panelRaised);
         g.setFont (font (11.0f, true));
         g.drawText (juce::String (issues.count), badge, juce::Justification::centred);
     }
@@ -117,7 +122,7 @@ void ChannelStrip::paint (juce::Graphics& g)
     g.drawText (v.numChannels < 2 ? juce::String ("mono") : juce::String (juce::roundToInt (widthPct)) + "%", widthRow, juce::Justification::centredRight);
 
     auto widthBar = juce::Rectangle<float> (inner.getX(), h - 28.0f, inner.getWidth(), 5.0f);
-    g.setColour (colours::background);
+    g.setColour (colours::screen);
     g.fillRoundedRectangle (widthBar, 2.0f);
     g.setColour (colours::accent.withMultipliedAlpha (alpha));
     g.fillRoundedRectangle (widthBar.withWidth (widthBar.getWidth() * juce::jlimit (0.0f, 1.0f, widthPct / 100.0f)), 2.0f);
@@ -125,7 +130,7 @@ void ChannelStrip::paint (juce::Graphics& g)
 
 void ChannelStrip::drawMeter (juce::Graphics& g, juce::Rectangle<float> r, float rmsDb, float peakDb) const
 {
-    g.setColour (colours::background);
+    g.setColour (colours::screen);
     g.fillRoundedRectangle (r, 2.0f);
 
     const float yRms = dbToY (rmsDb, r);
@@ -138,7 +143,7 @@ void ChannelStrip::drawMeter (juce::Graphics& g, juce::Rectangle<float> r, float
     g.fillRect (r.withTop (yRms).reduced (1.0f, 0.0f));
 
     const float yPeak = dbToY (peakDb, r);
-    g.setColour (peakDb >= -0.3f ? colours::meterRed : colours::text);
+    g.setColour (peakDb >= -0.3f ? colours::meterRed : colours::screenText);
     g.fillRect (r.getX() + 1.0f, yPeak - 1.0f, r.getWidth() - 2.0f, 2.0f);
 
     g.setColour (colours::outline);
@@ -148,7 +153,7 @@ void ChannelStrip::drawMeter (juce::Graphics& g, juce::Rectangle<float> r, float
 
 void ChannelStrip::drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r) const
 {
-    g.setColour (colours::background);
+    g.setColour (colours::screen);
     g.fillRoundedRectangle (r, 3.0f);
 
     const auto& s = data.displaySpectrumDb;
@@ -165,8 +170,8 @@ void ChannelStrip::drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r) co
     fill.lineTo (r.getX(), r.getBottom());
     fill.closeSubPath();
 
-    const auto c = roleColour (data.view.role).withMultipliedAlpha (data.stale ? 0.4f : 1.0f);
-    g.setColour (c.withAlpha (0.25f));
+    const auto c = (master ? colours::accent : roleColour (data.view.role)).withMultipliedAlpha (data.stale ? 0.4f : 1.0f);
+    g.setColour (c.withAlpha (0.35f));
     g.fillPath (fill);
     g.setColour (c);
     g.strokePath (line, juce::PathStrokeType (1.2f));
@@ -174,10 +179,10 @@ void ChannelStrip::drawSpectrum (juce::Graphics& g, juce::Rectangle<float> r) co
 
 void ChannelStrip::drawCorrelation (juce::Graphics& g, juce::Rectangle<float> r) const
 {
-    g.setColour (colours::background);
+    g.setColour (colours::screen);
     g.fillRoundedRectangle (r, 2.0f);
     const float cx = r.getCentreX();
-    g.setColour (colours::outline);
+    g.setColour (colours::screenDim);
     g.fillRect (cx - 0.5f, r.getY() - 1.0f, 1.0f, r.getHeight() + 2.0f);
 
     const float c = juce::jlimit (-1.0f, 1.0f, data.view.correlation);
@@ -198,7 +203,7 @@ ChannelRack::ChannelRack()
 
 void ChannelRack::paint (juce::Graphics& g)
 {
-    g.setColour (colours::textDim);
+    g.setColour (colours::text);
     g.setFont (font (12.0f, true));
     g.drawText ("CHANNEL RACK", getLocalBounds().removeFromTop (22).withTrimmedLeft (4), juce::Justification::centredLeft);
 }

@@ -4,12 +4,13 @@ namespace aimix::ui
 {
 namespace
 {
-constexpr float kPad = 14.0f;
-constexpr float kStepIndent = 26.0f;
+constexpr float kPad = 18.0f;
+constexpr float kStepIndent = 32.0f;
 
-const juce::Font titleFont()  { return font (15.0f, true); }
-const juce::Font bodyFont()   { return font (13.0f); }
-const juce::Font smallFont()  { return font (11.5f); }
+// Sized to be read at arm's length while mixing.
+const juce::Font titleFont()  { return font (19.0f, true); }
+const juce::Font bodyFont()   { return font (15.5f); }
+const juce::Font smallFont()  { return font (13.0f); }
 
 juce::String trackLine (const Suggestion& s)
 {
@@ -23,7 +24,7 @@ juce::String trackLine (const Suggestion& s)
 //==============================================================================
 DiagnosticCard::DiagnosticCard (const Suggestion& s) : suggestion (s)
 {
-    dismissButton.setColour (juce::TextButton::buttonColourId, colours::panelRaised);
+    dismissButton.setColour (juce::TextButton::buttonColourId, colours::panel);
     dismissButton.setColour (juce::TextButton::textColourOffId, colours::textDim);
     dismissButton.onClick = [this] { if (onDismiss) onDismiss (suggestion.key); };
     addAndMakeVisible (dismissButton);
@@ -49,29 +50,29 @@ DiagnosticCard::Layout DiagnosticCard::computeLayout (float width) const
 {
     Layout l;
     const float w = width - 2 * kPad - 4.0f;
-    float y = 12.0f;
+    float y = 14.0f;
     const float x = kPad + 4.0f;
 
-    l.header = { x, y, w, 20.0f };                             y += 28.0f;
+    l.header = { x, y, w, 24.0f };                             y += 34.0f;
     const float th = textHeight (suggestion.title, titleFont(), w);
     l.title = { x, y, w, th };                                 y += th + 4.0f;
-    l.tracks = { x, y, w, 16.0f };                             y += 22.0f;
+    l.tracks = { x, y, w, 20.0f };                             y += 28.0f;
     const float dh = textHeight (suggestion.detail, bodyFont(), w);
     l.detail = { x, y, w, dh };                                y += dh + 10.0f;
 
     if (suggestion.action.type != ActionType::None)
     {
-        l.action = { x, y, w, 24.0f };
-        y += 34.0f;
+        l.action = { x, y, w, 30.0f };
+        y += 42.0f;
     }
 
     for (const auto& step : suggestion.steps)
     {
-        const float sh = juce::jmax (20.0f, textHeight (step, bodyFont(), w - kStepIndent));
+        const float sh = juce::jmax (24.0f, textHeight (step, bodyFont(), w - kStepIndent));
         l.steps.push_back ({ x, y, w, sh });
-        y += sh + 8.0f;
+        y += sh + 10.0f;
     }
-    l.height = y + 6.0f;
+    l.height = y + 8.0f;
     return l;
 }
 
@@ -82,7 +83,7 @@ int DiagnosticCard::getHeightForWidth (int width) const
 
 void DiagnosticCard::resized()
 {
-    dismissButton.setBounds (getWidth() - (int) kPad - 64, 10, 64, 22);
+    dismissButton.setBounds (getWidth() - (int) kPad - 80, 12, 80, 28);
 }
 
 void DiagnosticCard::paint (juce::Graphics& g)
@@ -92,37 +93,36 @@ void DiagnosticCard::paint (juce::Graphics& g)
     const bool resolving = suggestion.resolving;
     const auto sev = resolving ? colours::meterGreen : severityColour (suggestion.severity);
 
-    g.setColour (colours::panel);
-    g.fillRoundedRectangle (bounds, 8.0f);
+    g.setColour (colours::panelRaised);
+    g.fillRoundedRectangle (bounds, 10.0f);
     g.setColour (colours::outline);
-    g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
+    g.drawRoundedRectangle (bounds, 10.0f, 1.0f);
 
     // severity accent on the left edge
     g.setColour (sev);
-    g.fillRoundedRectangle (bounds.withWidth (4.0f).reduced (0.0f, 8.0f), 2.0f);
+    g.fillRoundedRectangle (bounds.withWidth (6.0f).reduced (0.0f, 10.0f), 3.0f);
 
     // header: severity badge, category chip, confidence
     auto header = l.header;
     {
         const auto label = resolving ? juce::String ("LOOKS FIXED") : severityLabel (suggestion.severity);
-        const auto f = font (10.5f, true);
-        const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 16.0f;
+        const auto f = font (12.5f, true);
+        const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 20.0f;
         auto badge = header.removeFromLeft (bw);
-        g.setColour (sev.withAlpha (0.18f));
-        g.fillRoundedRectangle (badge, 10.0f);
         g.setColour (sev);
-        g.drawRoundedRectangle (badge.reduced (0.5f), 10.0f, 1.0f);
+        g.fillRoundedRectangle (badge, 12.0f);
+        g.setColour (colours::panelRaised);
         g.setFont (f);
         g.drawText (label, badge, juce::Justification::centred);
     }
     header.removeFromLeft (6.0f);
     {
         const auto label = categoryLabel (suggestion.category);
-        const auto f = font (10.5f, true);
-        const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 16.0f;
+        const auto f = font (12.5f, true);
+        const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 20.0f;
         auto chip = header.removeFromLeft (bw);
-        g.setColour (colours::panelRaised);
-        g.fillRoundedRectangle (chip, 10.0f);
+        g.setColour (colours::panel);
+        g.fillRoundedRectangle (chip, 12.0f);
         g.setColour (colours::textDim);
         g.setFont (f);
         g.drawText (label, chip, juce::Justification::centred);
@@ -132,12 +132,12 @@ void DiagnosticCard::paint (juce::Graphics& g)
     g.setFont (smallFont());
     g.drawText (resolving ? juce::String ("checking it stays fixed...")
                           : "confidence " + juce::String (juce::roundToInt (suggestion.confidence * 100.0f)) + "%",
-                header.withTrimmedRight (72.0f), juce::Justification::centredLeft);
+                header.withTrimmedRight (90.0f), juce::Justification::centredLeft);
 
     drawWrapped (g, suggestion.title, titleFont(), colours::text, l.title);
 
     g.setColour (colours::accent);
-    g.setFont (font (12.0f, true));
+    g.setFont (font (14.5f, true));
     g.drawText (trackLine (suggestion), l.tracks, juce::Justification::centredLeft);
 
     drawWrapped (g, suggestion.detail, bodyFont(), colours::textDim, l.detail);
@@ -145,37 +145,36 @@ void DiagnosticCard::paint (juce::Graphics& g)
     if (suggestion.action.type != ActionType::None)
     {
         const juce::String text = juce::String (describeAction (suggestion.action));
-        const auto f = monoFont (12.0f);
+        const auto f = monoFont (14.5f);
         const float aw = juce::jmin (l.action.getWidth(), juce::GlyphArrangement::getStringWidth (f, text) + 40.0f);
         auto chip = l.action.withWidth (aw);
-        g.setColour (colours::accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (chip, 5.0f);
-        g.setColour (colours::accent.withAlpha (0.5f));
-        g.drawRoundedRectangle (chip.reduced (0.5f), 5.0f, 1.0f);
-        g.setColour (colours::accent);
-        g.setFont (font (12.0f, true));
-        g.drawText (juce::CharPointer_UTF8 ("\xe2\x96\xb8"), chip.withWidth (22.0f), juce::Justification::centred);   // ▸
+        // shown on a small dark display, like the read-out on the hardware
+        g.setColour (colours::screen);
+        g.fillRoundedRectangle (chip, 6.0f);
+        g.setColour (colours::amber);
+        g.setFont (font (14.0f, true));
+        g.drawText (juce::CharPointer_UTF8 ("\xe2\x96\xb8"), chip.withWidth (26.0f), juce::Justification::centred);   // ▸
         g.setFont (f);
-        g.setColour (colours::text);
-        g.drawText (text, chip.withTrimmedLeft (22.0f), juce::Justification::centredLeft);
+        g.setColour (colours::screenText);
+        g.drawText (text, chip.withTrimmedLeft (26.0f), juce::Justification::centredLeft);
     }
 
     for (size_t i = 0; i < l.steps.size(); ++i)
     {
         auto r = l.steps[i];
-        auto dot = juce::Rectangle<float> (r.getX(), r.getY(), 18.0f, 18.0f);
-        g.setColour (colours::panelRaised);
+        auto dot = juce::Rectangle<float> (r.getX(), r.getY(), 23.0f, 23.0f);
+        g.setColour (colours::amber);
         g.fillEllipse (dot);
-        g.setColour (colours::textDim);
-        g.setFont (font (10.5f, true));
+        g.setColour (colours::amberText);
+        g.setFont (font (12.5f, true));
         g.drawText (juce::String ((int) i + 1), dot, juce::Justification::centred);
         drawWrapped (g, suggestion.steps[i], bodyFont(), colours::text, r.withTrimmedLeft (kStepIndent).withTrimmedTop (1.0f));
     }
 
     if (resolving)
     {
-        g.setColour (colours::panel.withAlpha (0.45f));   // fade the card while the fix is confirmed
-        g.fillRoundedRectangle (bounds.withTrimmedTop (l.title.getY() - 4.0f), 8.0f);
+        g.setColour (colours::panelRaised.withAlpha (0.5f));   // fade the card while the fix is confirmed
+        g.fillRoundedRectangle (bounds.withTrimmedTop (l.title.getY() - 4.0f), 10.0f);
     }
 }
 
@@ -188,10 +187,10 @@ DiagnosticPanel::DiagnosticPanel()
         auto* b = filterButtons.add (new juce::TextButton (labels[i]));
         b->setClickingTogglesState (true);
         b->setRadioGroupId (4711);
-        b->setColour (juce::TextButton::buttonColourId, colours::panel);
-        b->setColour (juce::TextButton::buttonOnColourId, colours::accent.withAlpha (0.35f));
+        b->setColour (juce::TextButton::buttonColourId, colours::panelRaised);
+        b->setColour (juce::TextButton::buttonOnColourId, colours::amber);
         b->setColour (juce::TextButton::textColourOffId, colours::textDim);
-        b->setColour (juce::TextButton::textColourOnId, colours::text);
+        b->setColour (juce::TextButton::textColourOnId, colours::amberText);
         b->setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < 4 ? juce::Button::ConnectedOnRight : 0));
         b->onClick = [this, i]
         {
@@ -202,13 +201,20 @@ DiagnosticPanel::DiagnosticPanel()
     }
     filterButtons[0]->setToggleState (true, juce::dontSendNotification);
 
+    expandButton.setColour (juce::TextButton::buttonColourId, colours::accent);
+    expandButton.setColour (juce::TextButton::textColourOffId, colours::panelRaised);
+    expandButton.setTooltip ("Show the advice across the whole window");
+    expandButton.onClick = [this] { setExpanded (! expanded); if (onExpandChanged) onExpandChanged (expanded); };
+    addAndMakeVisible (expandButton);
+
     viewport.setViewedComponent (&content, false);
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (8);
     addAndMakeVisible (viewport);
 
     emptyLabel.setText ("No issues detected yet. Press play: advice appears after a moment and stays until the problem is fixed.", juce::dontSendNotification);
-    emptyLabel.setColour (juce::Label::textColourId, colours::textFaint);
+    emptyLabel.setColour (juce::Label::textColourId, colours::textDim);
+    emptyLabel.setFont (font (15.0f));
     emptyLabel.setJustificationType (juce::Justification::centred);
     content.addChildComponent (emptyLabel);
 }
@@ -273,7 +279,7 @@ void DiagnosticPanel::layoutCards()
     {
         const int h = c->getHeightForWidth (w);
         c->setBounds (0, y, w, h);
-        y += h + 10;
+        y += h + 12;
     }
     emptyLabel.setBounds (0, 0, w, 80);
     content.setSize (w, juce::jmax (y, 80));
@@ -281,47 +287,55 @@ void DiagnosticPanel::layoutCards()
 
 void DiagnosticPanel::paint (juce::Graphics& g)
 {
-    auto top = getLocalBounds().removeFromTop (28);
-    g.setColour (colours::textDim);
-    g.setFont (font (12.0f, true));
-    g.drawText ("DIAGNOSTICS", top.withTrimmedLeft (2), juce::Justification::centredLeft);
+    auto top = getLocalBounds().removeFromTop (kHeaderHeight);
+    g.setColour (colours::text);
+    g.setFont (font (15.0f, true));
+    g.drawText ("MIX ADVICE", top.withTrimmedLeft (2), juce::Justification::centredLeft);
 
     // severity counts
     int counts[3] {};
     for (const auto& s : all)
         counts[(int) s.severity]++;
-    auto x = 96.0f;
+    auto x = 116.0f;
     for (int sev = 2; sev >= 0; --sev)
     {
-        auto r = juce::Rectangle<float> (x, 6.0f, 34.0f, 16.0f);
+        auto r = juce::Rectangle<float> (x, 7.0f, 38.0f, 20.0f);
         g.setColour (severityColour ((Severity) sev).withAlpha (counts[sev] > 0 ? 1.0f : 0.25f));
-        g.fillRoundedRectangle (r, 8.0f);
-        g.setColour (juce::Colours::white.withAlpha (counts[sev] > 0 ? 1.0f : 0.5f));
-        g.setFont (font (11.0f, true));
+        g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (colours::panelRaised.withAlpha (counts[sev] > 0 ? 1.0f : 0.7f));
+        g.setFont (font (13.0f, true));
         g.drawText (juce::String (counts[sev]), r, juce::Justification::centred);
-        x += 40.0f;
+        x += 44.0f;
     }
 
     if (trackFilter >= 0)
     {
         g.setColour (colours::accent);
-        g.setFont (font (11.5f));
-        g.drawText ("filtered to selected track", juce::Rectangle<float> (x + 6.0f, 6.0f, 180.0f, 16.0f), juce::Justification::centredLeft);
+        g.setFont (font (13.0f));
+        g.drawText ("filtered to selected track", juce::Rectangle<float> (x + 6.0f, 7.0f, 200.0f, 20.0f), juce::Justification::centredLeft);
     }
+}
+
+void DiagnosticPanel::setExpanded (bool shouldExpand)
+{
+    expanded = shouldExpand;
+    expandButton.setButtonText (expanded ? "Shrink" : "Enlarge");
 }
 
 void DiagnosticPanel::resized()
 {
     auto r = getLocalBounds();
-    auto top = r.removeFromTop (28);
+    auto top = r.removeFromTop (kHeaderHeight);
+    expandButton.setBounds (top.removeFromRight (96).reduced (0, 3));
+    top.removeFromRight (8);
     // Narrow panel: filters move to their own row instead of covering the counts.
-    if (getWidth() < 520)
-        top = r.removeFromTop (30);
-    auto buttons = top.removeFromRight (juce::jmin (260, top.getWidth())).reduced (0, 3);
+    if (getWidth() < 640)
+        top = r.removeFromTop (kHeaderHeight);
+    auto buttons = top.removeFromRight (juce::jmin (300, top.getWidth())).reduced (0, 3);
     const int bw = buttons.getWidth() / filterButtons.size();
     for (auto* b : filterButtons)
         b->setBounds (buttons.removeFromLeft (bw));
-    r.removeFromTop (6);
+    r.removeFromTop (8);
     viewport.setBounds (r);
     layoutCards();
 }

@@ -44,7 +44,7 @@ Use `-DAIMIX_JUCE_PATH=/path/to/JUCE` to build against a local JUCE checkout.
 
 1. Insert **AI Mix Assistant** on each track, ideally last in the chain. Leave **Role** on **Auto**: after a few seconds of playback the Master Engine works out whether the track is a kick, snare, drums, bass, vocal or another instrument, and the Listener shows what it detected. Pick a role yourself if the guess is wrong; roles decide which track yields when two of them clash.
 2. Insert one more instance on the mix bus and set **Mode** to **Master Engine**.
-3. Play the session. A card appears once a problem has been measured for about a quarter of a second, and stays until it is fixed: when the problem stops being measured the card turns green ("looks fixed") and disappears after about 3 seconds of playback without it. Stopping playback freezes the cards rather than clearing them. Click a strip to filter cards to that track; **Dismiss** hides a card for the session.
+3. Play the session. A card appears once a problem has been measured for about a quarter of a second, and stays until it is fixed: when the problem stops being measured the card turns green ("looks fixed") and disappears after about 3 seconds of playback without it. Stopping playback freezes the cards rather than clearing them. Click a strip to filter cards to that track; **Dismiss** hides a card for the session. **Enlarge** gives the advice the whole window (**Shrink** brings the channel rack back).
 
 **Only one instance, on the mix bus?** That works too and gives loudness, headroom, stereo/mono and overall tone (muddy, harsh) advice for the whole mix, with fixes on the mix bus. Advice about individual instruments, and which tracks clash, needs a Listener on those tracks.
 

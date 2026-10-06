@@ -20,10 +20,13 @@ public:
     void refresh() { timerCallback(); }
 
 private:
+    static constexpr int kHeaderHeight = 62;
+
     void timerCallback() override;
     void updateModeVisibility();
 
     AIMixProcessor& processor;
+    aimix::ui::RetroLookAndFeel lookAndFeel;   // declared first so it outlives the child widgets
 
     juce::ComboBox modeBox, roleBox;
     juce::TextEditor nameEditor;

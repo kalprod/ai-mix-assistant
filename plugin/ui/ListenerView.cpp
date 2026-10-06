@@ -7,9 +7,11 @@ void ListenerView::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat();
 
     // status card
-    auto card = r.removeFromTop (92.0f);
-    g.setColour (colours::panel);
-    g.fillRoundedRectangle (card, 8.0f);
+    auto card = r.removeFromTop (100.0f);
+    g.setColour (colours::panelRaised);
+    g.fillRoundedRectangle (card, 10.0f);
+    g.setColour (colours::outline);
+    g.drawRoundedRectangle (card.reduced (0.5f), 10.0f, 1.0f);
     auto c = card.reduced (16.0f, 12.0f);
 
     const auto dot = status.masterOnline ? colours::meterGreen : colours::meterAmber;
@@ -42,21 +44,21 @@ void ListenerView::paint (juce::Graphics& g)
     const float w = std::pow (10.0f, status.sideToMidDb / 10.0f);
     const float peak = juce::jmax (status.peakDb[0], status.peakDb[1]);
     const Tile tiles[] = {
-        { "RMS L / R", formatDb (status.rmsDb[0]) + " / " + formatDb (status.rmsDb[1]), colours::text },
-        { "PEAK", formatDb (peak) + " dBFS", peak >= -0.3f ? colours::meterRed : colours::text },
-        { "LUFS M / S", formatLufs (status.momentary) + " / " + formatLufs (status.shortTerm), colours::text },
-        { "LUFS INTEGRATED", formatLufs (status.integrated), colours::text },
-        { "PHASE CORRELATION", juce::String (status.correlation, 2), status.correlation < 0 ? colours::meterRed : colours::text },
-        { "STEREO WIDTH", juce::String (juce::roundToInt (100.0f * w / (1.0f + w))) + " %", colours::text },
+        { "RMS L / R", formatDb (status.rmsDb[0]) + " / " + formatDb (status.rmsDb[1]), colours::screenText },
+        { "PEAK", formatDb (peak) + " dBFS", peak >= -0.3f ? colours::meterRed : colours::screenText },
+        { "LUFS M / S", formatLufs (status.momentary) + " / " + formatLufs (status.shortTerm), colours::screenText },
+        { "LUFS INTEGRATED", formatLufs (status.integrated), colours::screenText },
+        { "PHASE CORRELATION", juce::String (status.correlation, 2), status.correlation < 0 ? colours::meterRed : colours::screenText },
+        { "STEREO WIDTH", juce::String (juce::roundToInt (100.0f * w / (1.0f + w))) + " %", colours::screenText },
     };
 
     const float tileW = r.getWidth() / 3.0f;
     for (int i = 0; i < 6; ++i)
     {
         auto t = juce::Rectangle<float> (r.getX() + tileW * (float) (i % 3), r.getY() + 76.0f * (float) (i / 3), tileW, 70.0f).reduced (4.0f, 0.0f);
-        g.setColour (colours::panel);
+        g.setColour (colours::screen);
         g.fillRoundedRectangle (t, 8.0f);
-        g.setColour (colours::textFaint);
+        g.setColour (colours::screenDim);
         g.setFont (font (10.5f, true));
         g.drawText (tiles[i].label, t.reduced (14.0f, 10.0f).removeFromTop (14.0f), juce::Justification::centredLeft);
         g.setColour (tiles[i].colour);
