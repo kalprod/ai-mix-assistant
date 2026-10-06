@@ -1,0 +1,18 @@
+Listener analyser (48 kHz stereo, 60 s of audio per row)
+  block    master             avg us/block       worst us   % one core   block budget %
+  64       draining                   1.57          94.78       0.118%            7.11%
+  64       absent (orphan)            0.89         113.89       0.067%            8.54%
+  128      draining                   3.52         136.36       0.132%            5.11%
+  128      absent (orphan)            1.70          94.67       0.064%            3.55%
+  256      draining                   6.18         158.77       0.116%            2.98%
+  256      absent (orphan)            3.37         260.99       0.063%            4.89%
+  512      draining                  12.33         221.41       0.116%            2.08%
+  512      absent (orphan)            6.89         278.91       0.065%            2.61%
+  1024     draining                  25.92         204.91       0.121%            0.96%
+  1024     absent (orphan)           12.64         163.97       0.059%            0.77%
+
+Master Engine (synthetic session, ~15 Hz ticks, background thread)
+  tracks        avg ms / tick      engine % core     listeners % core
+  9                     0.711             1.073%               1.198%
+  32                    2.074             3.128%               4.129%
+  63                    4.827             7.280%               9.001%

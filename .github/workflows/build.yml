@@ -1,0 +1,53 @@
+# Builds and validates the plugin on macOS (VST3 + AU), Windows (VST3) and Linux (VST3).
+name: build
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxcomposite-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb ninja-build
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ runner.os == 'macOS' && '-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"' || '' }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: pluginval (VST3)
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            macOS)   curl -sSLo pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip && unzip -q pv.zip && PV=pluginval.app/Contents/MacOS/pluginval ;;
+            Windows) curl -sSLo pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip && unzip -q pv.zip && PV=./pluginval.exe ;;
+            Linux)   curl -sSLo pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip && unzip -q pv.zip && PV="xvfb-run -a ./pluginval" ;;
+          esac
+          VST3=$(find build -name "*.vst3" -maxdepth 5 -type d | head -1)
+          $PV --strictness-level 10 --validate-in-process "$VST3"
+
+      - name: auval (AU)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$(find build -name '*.component' -maxdepth 5 -type d | head -1)" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Aima Aimx
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AIMixAssistant-${{ matrix.os }}
+          path: |
+            build/**/AIMixAssistant_artefacts/Release/VST3
+            build/**/AIMixAssistant_artefacts/Release/AU
+            build/**/AIMixAssistant_artefacts/Release/Standalone

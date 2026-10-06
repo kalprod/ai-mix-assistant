@@ -1,0 +1,281 @@
+// Host-compatibility checks run against the real JUCE AudioProcessor/Editor
+// (the same code every plugin wrapper - VST3, AU, AAX, Standalone - calls into),
+// plus PNG snapshots of both editor modes.
+//
+//   aimix_plugin_checks [output-dir]
+//
+// Format-specific wrapper validation (VST3 / AU / AAX) is done separately with
+// pluginval, auval and the AAX Validator; see docs/HOST_COMPATIBILITY.md.
+
+#include "../plugin/PluginEditor.h"
+#include "../plugin/PluginProcessor.h"
+#include "aimix/SyntheticSession.h"
+
+#include <juce_audio_utils/juce_audio_utils.h>
+
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <new>
+#include <random>
+#include <thread>
+
+static std::atomic<long long> allocations { 0 };
+void* operator new (std::size_t n)
+{
+    allocations.fetch_add (1, std::memory_order_relaxed);
+    if (void* p = std::malloc (n ? n : 1)) return p;
+    throw std::bad_alloc();
+}
+void* operator new[] (std::size_t n) { return operator new (n); }
+void operator delete (void* p) noexcept { std::free (p); }
+void operator delete[] (void* p) noexcept { std::free (p); }
+void operator delete (void* p, std::size_t) noexcept { std::free (p); }
+void operator delete[] (void* p, std::size_t) noexcept { std::free (p); }
+
+namespace
+{
+int failures = 0;
+
+void check (bool ok, const juce::String& what)
+{
+    std::printf ("%s %s\n", ok ? "[PASS]" : "[FAIL]", what.toRawUTF8());
+    if (! ok) ++failures;
+}
+
+struct FakePlayHead final : juce::AudioPlayHead
+{
+    int64_t position = 0;
+    bool playing = true;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setTimeInSamples (position);
+        info.setIsPlaying (playing);
+        info.setBpm (120.0);
+        return info;
+    }
+};
+
+void savePng (juce::Component& c, const juce::File& file)
+{
+    auto image = c.createComponentSnapshot (c.getLocalBounds(), true, 1.0f);
+    file.deleteFile();
+    juce::FileOutputStream out (file);
+    juce::PNGImageFormat png;
+    const bool ok = out.openedOk() && png.writeImageToStream (image, out);
+    check (ok, "wrote " + file.getFullPathName());
+}
+
+void setParam (AIMixProcessor& p, const juce::String& id, float normalised)
+{
+    p.parameters.getParameter (id)->setValueNotifyingHost (normalised);
+}
+
+//==============================================================================
+void checkLayouts()
+{
+    AIMixProcessor p;
+    using CS = juce::AudioChannelSet;
+    auto layout = [] (CS in, CS out) { juce::AudioProcessor::BusesLayout l; l.inputBuses.add (in); l.outputBuses.add (out); return l; };
+    check (p.checkBusesLayoutSupported (layout (CS::stereo(), CS::stereo())), "stereo in/out supported");
+    check (p.checkBusesLayoutSupported (layout (CS::mono(), CS::mono())), "mono in/out supported");
+    check (! p.checkBusesLayoutSupported (layout (CS::mono(), CS::stereo())), "mono->stereo rejected (pass-through only)");
+    check (! p.checkBusesLayoutSupported (layout (CS::create5point1(), CS::create5point1())), "5.1 rejected");
+    check (p.getLatencySamples() == 0, "reports zero latency");
+    check (p.getTailLengthSeconds() == 0.0, "reports zero tail");
+}
+
+void checkNonDestructiveAndRealtime()
+{
+    AIMixProcessor p;
+    FakePlayHead head;
+    p.setPlayHead (&head);
+    p.setPlayConfigDetails (2, 2, 48000.0, 2048);
+    p.prepareToPlay (48000.0, 2048);
+
+    std::mt19937 rng (42);
+    std::uniform_int_distribution<int> sizeDist (1, 2048);
+    std::uniform_real_distribution<float> sample (-1.0f, 1.0f);
+    juce::AudioBuffer<float> buffer (2, 2048), copy (2, 2048);
+    juce::MidiBuffer midi;
+
+    bool identical = true;
+    long long allocs = 0;
+    for (int block = 0; block < 3000; ++block)
+    {
+        const int n = sizeDist (rng);   // hosts may send any size up to the maximum, including odd ones
+        buffer.setSize (2, n, false, false, true);
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < n; ++i)
+                buffer.setSample (c, i, sample (rng));
+        copy.makeCopyOf (buffer, true);
+
+        head.playing = (block / 500) % 2 == 0;   // toggle transport every 500 blocks
+        if (block == 1700) head.position = 123457;   // seek
+
+        const auto before = allocations.load();
+        p.processBlock (buffer, midi);
+        allocs += allocations.load() - before;
+        head.position += n;
+
+        for (int c = 0; c < 2 && identical; ++c)
+            identical = std::memcmp (buffer.getReadPointer (c), copy.getReadPointer (c), sizeof (float) * (size_t) n) == 0;
+    }
+    check (identical, "processBlock leaves audio bit-identical (3000 random-size blocks, seeks, transport toggles)");
+    check (allocs == 0, "processBlock performs no heap allocation (" + juce::String (allocs) + ")");
+
+    // Silence / denormal input must not explode CPU or produce NaNs downstream.
+    buffer.setSize (2, 512);
+    for (int c = 0; c < 2; ++c)
+        for (int i = 0; i < 512; ++i)
+            buffer.setSample (c, i, 1.0e-39f);
+    p.processBlock (buffer, midi);
+    check (p.getMeters().momentaryLufs.load() == p.getMeters().momentaryLufs.load(), "denormal input yields finite meters");
+
+    p.releaseResources();
+    p.prepareToPlay (96000.0, 64);   // re-prepare at another rate / block size
+    buffer.setSize (2, 64);
+    buffer.clear();
+    p.processBlock (buffer, midi);
+    check (true, "re-prepare at 96 kHz / 64 samples");
+}
+
+void checkState()
+{
+    juce::MemoryBlock state;
+    {
+        AIMixProcessor p;
+        setParam (p, "mode", 1.0f);
+        setParam (p, "role", p.parameters.getParameter ("role")->convertTo0to1 (5.0f));   // Bass
+        p.setTrackNameOverride ("Bass DI");
+        p.getStateInformation (state);
+    }
+    AIMixProcessor restored;
+    restored.setStateInformation (state.getData(), (int) state.getSize());
+    check (restored.getMode() == AIMixProcessor::Mode::Master, "state restores mode");
+    check (juce::roundToInt (restored.parameters.getRawParameterValue ("role")->load()) == 5, "state restores role");
+    check (restored.getTrackNameOverride() == "Bass DI", "state restores track name");
+
+    restored.setStateInformation ("garbage", 7);
+    check (true, "garbage state is ignored without crashing");
+}
+
+std::shared_ptr<const aimix::MixReport> checkMultiInstance (const juce::File& outDir)
+{
+    aimix::SharedBus::unlinkSharedMemory (aimix::kDefaultBusName);
+
+    AIMixProcessor kick, synth, master;
+    kick.setTrackNameOverride ("Kick");
+    setParam (kick, "role", kick.parameters.getParameter ("role")->convertTo0to1 ((float) aimix::TrackRole::Kick));
+    synth.setTrackNameOverride ("Hot Synth");
+    setParam (synth, "role", synth.parameters.getParameter ("role")->convertTo0to1 ((float) aimix::TrackRole::Synth));
+    setParam (master, "mode", 1.0f);
+
+    FakePlayHead head;
+    for (auto* p : { &kick, &synth, &master })
+    {
+        p->setPlayHead (&head);
+        p->setPlayConfigDetails (2, 2, 48000.0, 512);
+        p->prepareToPlay (48000.0, 512);
+        p->syncModeNow();
+    }
+    check (master.getLatestReport() != nullptr, "master instance started its engine");
+    check (kick.getBusSlot() >= 0 && synth.getBusSlot() >= 0 && kick.getBusSlot() != synth.getBusSlot(), "listeners claimed distinct bus slots");
+
+    juce::AudioBuffer<float> k (2, 512), s (2, 512), mix (2, 512);
+    juce::MidiBuffer midi;
+    const double fs = 48000.0;
+
+    // ~4 s of audio, paced so the engine thread (15 Hz) keeps up, like real time would.
+    for (int block = 0; block < 400; ++block)
+    {
+        for (int i = 0; i < 512; ++i)
+        {
+            const double t = (double) (head.position + i) / fs;
+            const double kt = std::fmod (t, 0.5);
+            const float kv = (float) (0.8 * std::exp (-kt / 0.15) * std::sin (2.0 * juce::MathConstants<double>::pi * 55.0 * kt));
+            const float sv = std::fmod (t * 440.0, 1.0) < 0.5 ? 1.15f : -1.15f;
+            for (int c = 0; c < 2; ++c) { k.setSample (c, i, kv); s.setSample (c, i, sv); mix.setSample (c, i, 0.5f * (kv + sv)); }
+        }
+        kick.processBlock (k, midi);
+        synth.processBlock (s, midi);
+        master.processBlock (mix, midi);
+        head.position += 512;
+        if (block % 4 == 3)
+            std::this_thread::sleep_for (std::chrono::milliseconds (20));
+    }
+    std::this_thread::sleep_for (std::chrono::milliseconds (300));
+
+    auto report = master.getLatestReport();
+    check (report != nullptr && report->isActiveMaster, "master owns the bus");
+    bool sawKick = false, sawSynth = false;
+    if (report != nullptr)
+        for (const auto& t : report->tracks)
+        {
+            sawKick |= t.view.name == "Kick" && t.view.role == aimix::TrackRole::Kick;
+            sawSynth |= t.view.name == "Hot Synth";
+        }
+    check (sawKick && sawSynth, "master sees both listener instances with names and roles");
+    check (report != nullptr && report->hasMaster, "master publishes its own mix-bus analysis");
+
+    bool clipping = false;
+    if (report != nullptr)
+        for (const auto& sug : report->suggestions)
+            clipping |= sug.ruleId == "gain.clipping" && ! sug.trackNames.empty() && sug.trackNames[0] == "Hot Synth";
+    check (clipping, "clipping on the hot synth reaches the master as a suggestion");
+
+    // Listener editor snapshot from the real processor.
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> editor (kick.createEditor());
+        static_cast<AIMixEditor*> (editor.get())->refresh();
+        savePng (*editor, outDir.getChildFile ("ui_listener.png"));
+    }
+
+    for (auto* p : { &kick, &synth, &master })
+        p->setPlayHead (nullptr);
+    return report;
+}
+
+void renderMasterSnapshot (const juce::File& outDir)
+{
+    // Full synthetic session through the real pipeline, shown in the real editor.
+    auto run = aimix::runSyntheticSession (10.0);
+    auto report = run.engine->getLatestReport();
+
+    AIMixProcessor p;
+    setParam (p, "mode", 1.0f);
+    p.syncModeNow();
+    std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+    auto* ed = static_cast<AIMixEditor*> (editor.get());
+    ed->setReportOverride (report);
+    ed->refresh();
+    savePng (*editor, outDir.getChildFile ("ui_master.png"));
+
+    editor->setSize (900, 600);   // smallest supported size
+    ed->refresh();
+    savePng (*editor, outDir.getChildFile ("ui_master_small.png"));
+
+    juce::FileOutputStream json (outDir.getChildFile ("synthetic_session_suggestions.json"));
+    json.setPosition (0);
+    json.truncate();
+    json.writeText (aimix::toJson (report->suggestions), false, false, nullptr);
+}
+}
+
+int main (int argc, char** argv)
+{
+    juce::ScopedJuceInitialiser_GUI gui;
+    const juce::File outDir = argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[1])
+                                       : juce::File::getCurrentWorkingDirectory();
+    outDir.createDirectory();
+
+    checkLayouts();
+    checkNonDestructiveAndRealtime();
+    checkState();
+    checkMultiInstance (outDir);
+    renderMasterSnapshot (outDir);
+
+    std::printf ("\n%s (%d failed)\n", failures == 0 ? "ALL PLUGIN CHECKS PASSED" : "PLUGIN CHECKS FAILED", failures);
+    return failures == 0 ? 0 : 1;
+}

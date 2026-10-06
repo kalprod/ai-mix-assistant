@@ -1,0 +1,25 @@
+[PASS] stereo in/out supported
+[PASS] mono in/out supported
+[PASS] mono->stereo rejected (pass-through only)
+[PASS] 5.1 rejected
+[PASS] reports zero latency
+[PASS] reports zero tail
+[PASS] processBlock leaves audio bit-identical (3000 random-size blocks, seeks, transport toggles)
+[PASS] processBlock performs no heap allocation (0)
+[PASS] denormal input yields finite meters
+[PASS] re-prepare at 96 kHz / 64 samples
+[PASS] state restores mode
+[PASS] state restores role
+[PASS] state restores track name
+[PASS] garbage state is ignored without crashing
+[PASS] master instance started its engine
+[PASS] listeners claimed distinct bus slots
+[PASS] master owns the bus
+[PASS] master sees both listener instances with names and roles
+[PASS] master publishes its own mix-bus analysis
+[PASS] clipping on the hot synth reaches the master as a suggestion
+[PASS] wrote ui_listener.png
+[PASS] wrote ui_master.png
+[PASS] wrote ui_master_small.png
+
+ALL PLUGIN CHECKS PASSED (0 failed)

@@ -1,0 +1,298 @@
+#include "DiagnosticCards.h"
+
+namespace aimix::ui
+{
+namespace
+{
+constexpr float kPad = 14.0f;
+constexpr float kStepIndent = 26.0f;
+
+const juce::Font titleFont()  { return font (15.0f, true); }
+const juce::Font bodyFont()   { return font (13.0f); }
+const juce::Font smallFont()  { return font (11.5f); }
+
+juce::String trackLine (const Suggestion& s)
+{
+    juce::StringArray names;
+    for (auto& n : s.trackNames)
+        names.add (n);
+    return names.joinIntoString ("  \xc2\xb7  ");   // middle dot
+}
+}
+
+//==============================================================================
+DiagnosticCard::DiagnosticCard (const Suggestion& s) : suggestion (s)
+{
+    dismissButton.setColour (juce::TextButton::buttonColourId, colours::panelRaised);
+    dismissButton.setColour (juce::TextButton::textColourOffId, colours::textDim);
+    dismissButton.onClick = [this] { if (onDismiss) onDismiss (suggestion.key); };
+    addAndMakeVisible (dismissButton);
+}
+
+DiagnosticCard::Layout DiagnosticCard::computeLayout (float width) const
+{
+    Layout l;
+    const float w = width - 2 * kPad - 4.0f;
+    float y = 12.0f;
+    const float x = kPad + 4.0f;
+
+    l.header = { x, y, w, 20.0f };                             y += 28.0f;
+    const float th = textHeight (suggestion.title, titleFont(), w);
+    l.title = { x, y, w, th };                                 y += th + 4.0f;
+    l.tracks = { x, y, w, 16.0f };                             y += 22.0f;
+    const float dh = textHeight (suggestion.detail, bodyFont(), w);
+    l.detail = { x, y, w, dh };                                y += dh + 10.0f;
+
+    if (suggestion.action.type != ActionType::None)
+    {
+        l.action = { x, y, w, 24.0f };
+        y += 34.0f;
+    }
+
+    for (const auto& step : suggestion.steps)
+    {
+        const float sh = juce::jmax (20.0f, textHeight (step, bodyFont(), w - kStepIndent));
+        l.steps.push_back ({ x, y, w, sh });
+        y += sh + 8.0f;
+    }
+    l.height = y + 6.0f;
+    return l;
+}
+
+int DiagnosticCard::getHeightForWidth (int width) const
+{
+    return (int) std::ceil (computeLayout ((float) width).height);
+}
+
+void DiagnosticCard::resized()
+{
+    dismissButton.setBounds (getWidth() - (int) kPad - 64, 10, 64, 22);
+}
+
+void DiagnosticCard::paint (juce::Graphics& g)
+{
+    const auto l = computeLayout ((float) getWidth());
+    auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    const auto sev = severityColour (suggestion.severity);
+
+    g.setColour (colours::panel);
+    g.fillRoundedRectangle (bounds, 8.0f);
+    g.setColour (colours::outline);
+    g.drawRoundedRectangle (bounds, 8.0f, 1.0f);
+
+    // severity accent on the left edge
+    g.setColour (sev);
+    g.fillRoundedRectangle (bounds.withWidth (4.0f).reduced (0.0f, 8.0f), 2.0f);
+
+    // header: severity badge, category chip, confidence
+    auto header = l.header;
+    {
+        const auto label = severityLabel (suggestion.severity);
+        const auto f = font (10.5f, true);
+        const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 16.0f;
+        auto badge = header.removeFromLeft (bw);
+        g.setColour (sev.withAlpha (0.18f));
+        g.fillRoundedRectangle (badge, 10.0f);
+        g.setColour (sev);
+        g.drawRoundedRectangle (badge.reduced (0.5f), 10.0f, 1.0f);
+        g.setFont (f);
+        g.drawText (label, badge, juce::Justification::centred);
+    }
+    header.removeFromLeft (6.0f);
+    {
+        const auto label = categoryLabel (suggestion.category);
+        const auto f = font (10.5f, true);
+        const float bw = juce::GlyphArrangement::getStringWidth (f, label) + 16.0f;
+        auto chip = header.removeFromLeft (bw);
+        g.setColour (colours::panelRaised);
+        g.fillRoundedRectangle (chip, 10.0f);
+        g.setColour (colours::textDim);
+        g.setFont (f);
+        g.drawText (label, chip, juce::Justification::centred);
+    }
+    header.removeFromLeft (10.0f);
+    g.setColour (colours::textFaint);
+    g.setFont (smallFont());
+    g.drawText ("confidence " + juce::String (juce::roundToInt (suggestion.confidence * 100.0f)) + "%",
+                header.withTrimmedRight (72.0f), juce::Justification::centredLeft);
+
+    drawWrapped (g, suggestion.title, titleFont(), colours::text, l.title);
+
+    g.setColour (colours::accent);
+    g.setFont (font (12.0f, true));
+    g.drawText (trackLine (suggestion), l.tracks, juce::Justification::centredLeft);
+
+    drawWrapped (g, suggestion.detail, bodyFont(), colours::textDim, l.detail);
+
+    if (suggestion.action.type != ActionType::None)
+    {
+        const juce::String text = juce::String (describeAction (suggestion.action));
+        const auto f = monoFont (12.0f);
+        const float aw = juce::jmin (l.action.getWidth(), juce::GlyphArrangement::getStringWidth (f, text) + 40.0f);
+        auto chip = l.action.withWidth (aw);
+        g.setColour (colours::accent.withAlpha (0.12f));
+        g.fillRoundedRectangle (chip, 5.0f);
+        g.setColour (colours::accent.withAlpha (0.5f));
+        g.drawRoundedRectangle (chip.reduced (0.5f), 5.0f, 1.0f);
+        g.setColour (colours::accent);
+        g.setFont (font (12.0f, true));
+        g.drawText (juce::CharPointer_UTF8 ("\xe2\x96\xb8"), chip.withWidth (22.0f), juce::Justification::centred);   // ▸
+        g.setFont (f);
+        g.setColour (colours::text);
+        g.drawText (text, chip.withTrimmedLeft (22.0f), juce::Justification::centredLeft);
+    }
+
+    for (size_t i = 0; i < l.steps.size(); ++i)
+    {
+        auto r = l.steps[i];
+        auto dot = juce::Rectangle<float> (r.getX(), r.getY(), 18.0f, 18.0f);
+        g.setColour (colours::panelRaised);
+        g.fillEllipse (dot);
+        g.setColour (colours::textDim);
+        g.setFont (font (10.5f, true));
+        g.drawText (juce::String ((int) i + 1), dot, juce::Justification::centred);
+        drawWrapped (g, suggestion.steps[i], bodyFont(), colours::text, r.withTrimmedLeft (kStepIndent).withTrimmedTop (1.0f));
+    }
+}
+
+//==============================================================================
+DiagnosticPanel::DiagnosticPanel()
+{
+    const char* labels[] = { "All", "Gain", "EQ", "Pan", "Phase" };
+    for (int i = 0; i < 5; ++i)
+    {
+        auto* b = filterButtons.add (new juce::TextButton (labels[i]));
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (4711);
+        b->setColour (juce::TextButton::buttonColourId, colours::panel);
+        b->setColour (juce::TextButton::buttonOnColourId, colours::accent.withAlpha (0.35f));
+        b->setColour (juce::TextButton::textColourOffId, colours::textDim);
+        b->setColour (juce::TextButton::textColourOnId, colours::text);
+        b->setConnectedEdges ((i > 0 ? juce::Button::ConnectedOnLeft : 0) | (i < 4 ? juce::Button::ConnectedOnRight : 0));
+        b->onClick = [this, i]
+        {
+            categoryFilter = i == 0 ? std::nullopt : std::optional<Category> ((Category) (i - 1));
+            rebuild();
+        };
+        addAndMakeVisible (b);
+    }
+    filterButtons[0]->setToggleState (true, juce::dontSendNotification);
+
+    viewport.setViewedComponent (&content, false);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (8);
+    addAndMakeVisible (viewport);
+
+    emptyLabel.setText ("No issues detected. Play the session with the Listener on each track.", juce::dontSendNotification);
+    emptyLabel.setColour (juce::Label::textColourId, colours::textFaint);
+    emptyLabel.setJustificationType (juce::Justification::centred);
+    content.addChildComponent (emptyLabel);
+}
+
+bool DiagnosticPanel::passesFilter (const Suggestion& s) const
+{
+    if (categoryFilter.has_value() && s.category != *categoryFilter)
+        return false;
+    if (trackFilter >= 0 && std::find (s.trackIds.begin(), s.trackIds.end(), (uint32_t) trackFilter) == s.trackIds.end())
+        return false;
+    return true;
+}
+
+void DiagnosticPanel::setSuggestions (const std::vector<Suggestion>& list)
+{
+    // Rebuild only when the visible content actually changed, so the list
+    // does not jump around while the user is reading it.
+    std::string sig;
+    for (const auto& s : list)
+        sig += s.key + '|' + s.title + '|' + s.detail.substr (0, 24) + '|' + std::to_string ((int) s.severity) + ';';
+    if (sig == signature)
+        return;
+    signature = std::move (sig);
+    all = list;
+    rebuild();
+    repaint();
+}
+
+void DiagnosticPanel::setTrackFilter (int64_t trackId)
+{
+    trackFilter = trackId;
+    rebuild();
+}
+
+void DiagnosticPanel::rebuild()
+{
+    cards.clear();
+    for (const auto& s : all)
+    {
+        if (! passesFilter (s))
+            continue;
+        auto* card = cards.add (new DiagnosticCard (s));
+        card->onDismiss = [this] (const std::string& key) { if (onDismiss) onDismiss (key); };
+        content.addAndMakeVisible (card);
+    }
+    emptyLabel.setVisible (cards.isEmpty());
+    layoutCards();
+}
+
+void DiagnosticPanel::layoutCards()
+{
+    const int w = juce::jmax (200, viewport.getWidth() - viewport.getScrollBarThickness() - 4);
+    int y = 0;
+    for (auto* c : cards)
+    {
+        const int h = c->getHeightForWidth (w);
+        c->setBounds (0, y, w, h);
+        y += h + 10;
+    }
+    emptyLabel.setBounds (0, 0, w, 80);
+    content.setSize (w, juce::jmax (y, 80));
+}
+
+void DiagnosticPanel::paint (juce::Graphics& g)
+{
+    auto top = getLocalBounds().removeFromTop (28);
+    g.setColour (colours::textDim);
+    g.setFont (font (12.0f, true));
+    g.drawText ("DIAGNOSTICS", top.withTrimmedLeft (2), juce::Justification::centredLeft);
+
+    // severity counts
+    int counts[3] {};
+    for (const auto& s : all)
+        counts[(int) s.severity]++;
+    auto x = 96.0f;
+    for (int sev = 2; sev >= 0; --sev)
+    {
+        auto r = juce::Rectangle<float> (x, 6.0f, 34.0f, 16.0f);
+        g.setColour (severityColour ((Severity) sev).withAlpha (counts[sev] > 0 ? 1.0f : 0.25f));
+        g.fillRoundedRectangle (r, 8.0f);
+        g.setColour (juce::Colours::white.withAlpha (counts[sev] > 0 ? 1.0f : 0.5f));
+        g.setFont (font (11.0f, true));
+        g.drawText (juce::String (counts[sev]), r, juce::Justification::centred);
+        x += 40.0f;
+    }
+
+    if (trackFilter >= 0)
+    {
+        g.setColour (colours::accent);
+        g.setFont (font (11.5f));
+        g.drawText ("filtered to selected track", juce::Rectangle<float> (x + 6.0f, 6.0f, 180.0f, 16.0f), juce::Justification::centredLeft);
+    }
+}
+
+void DiagnosticPanel::resized()
+{
+    auto r = getLocalBounds();
+    auto top = r.removeFromTop (28);
+    // Narrow panel: filters move to their own row instead of covering the counts.
+    if (getWidth() < 520)
+        top = r.removeFromTop (30);
+    auto buttons = top.removeFromRight (juce::jmin (260, top.getWidth())).reduced (0, 3);
+    const int bw = buttons.getWidth() / filterButtons.size();
+    for (auto* b : filterButtons)
+        b->setBounds (buttons.removeFromLeft (bw));
+    r.removeFromTop (6);
+    viewport.setBounds (r);
+    layoutCards();
+}
+
+} // namespace aimix::ui
