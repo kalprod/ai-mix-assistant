@@ -74,7 +74,28 @@ jobs:
                 codesign --force --deep --sign - "$b"
                 codesign --verify --deep --strict "$b"
               done
-              ditto -c -k --keepParent "$OUT" "$OUT.zip" ;;
+              ditto -c -k --keepParent "$OUT" "$OUT.zip"
+
+              # Double-click installer: puts the AU and VST3 where every DAW
+              # looks. Files written by Installer are not quarantined, so the
+              # plug-ins load without any Terminal step.
+              ROOT=pkgroot
+              mkdir -p "$ROOT/Library/Audio/Plug-Ins/Components" "$ROOT/Library/Audio/Plug-Ins/VST3" "$ROOT/Applications"
+              ditto "$OUT/AI Mix Assistant.component" "$ROOT/Library/Audio/Plug-Ins/Components/AI Mix Assistant.component"
+              ditto "$OUT/AI Mix Assistant.vst3" "$ROOT/Library/Audio/Plug-Ins/VST3/AI Mix Assistant.vst3"
+              ditto "$OUT/AI Mix Assistant.app" "$ROOT/Applications/AI Mix Assistant.app"
+              # Always install to these exact paths (never "relocate" onto an old copy elsewhere).
+              pkgbuild --analyze --root "$ROOT" components.plist
+              i=0; while plutil -replace "$i.BundleIsRelocatable" -bool NO components.plist 2>/dev/null; do i=$((i+1)); done
+              plutil -p components.plist
+              mkdir -p scripts
+              printf '%s\n' '#!/bin/sh' 'killall -9 AudioComponentRegistrar 2>/dev/null || true' 'exit 0' > scripts/postinstall
+              chmod +x scripts/postinstall
+              pkgbuild --root "$ROOT" --component-plist components.plist --scripts scripts \
+                --identifier com.kalprod.aimixassistant --version "1.0.${{ github.run_number }}" \
+                --install-location / plugins.pkg
+              productbuild --package plugins.pkg AIMixAssistant-macOS.pkg
+              pkgutil --payload-files AIMixAssistant-macOS.pkg | grep -E "component$|vst3$|app$" ;;
             Windows)
               cp "$REL/Standalone/"*.exe "$OUT/"
               printf '%s\r\n' \
@@ -99,6 +120,13 @@ jobs:
           path: AIMixAssistant-${{ runner.os }}.zip
           compression-level: 0
 
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: AIMixAssistant-macOS-installer
+          path: AIMixAssistant-macOS.pkg
+          compression-level: 0
+
   # Install the exact zip people download onto the newest macOS on Apple
   # Silicon and validate it there, as a fresh user would.
   verify-macos-latest:
@@ -107,16 +135,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: AIMixAssistant-macOS
-      - name: Install like a user
+          name: AIMixAssistant-macOS-installer
+      - name: Install with the .pkg, like a user
         run: |
           sw_vers; uname -m
-          ditto -x -k AIMixAssistant-macOS.zip .
-          mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
-          cp -R "AIMixAssistant-macOS/AI Mix Assistant.component" ~/Library/Audio/Plug-Ins/Components/
-          cp -R "AIMixAssistant-macOS/AI Mix Assistant.vst3" ~/Library/Audio/Plug-Ins/VST3/
-          codesign --verify --deep --strict ~/Library/Audio/Plug-Ins/Components/"AI Mix Assistant.component"
-          codesign --verify --deep --strict ~/Library/Audio/Plug-Ins/VST3/"AI Mix Assistant.vst3"
+          sudo installer -pkg AIMixAssistant-macOS.pkg -target /
+          P=/Library/Audio/Plug-Ins
+          codesign --verify --deep --strict "$P/Components/AI Mix Assistant.component"
+          codesign --verify --deep --strict "$P/VST3/AI Mix Assistant.vst3"
+          codesign --verify --deep --strict "/Applications/AI Mix Assistant.app"
           killall -9 AudioComponentRegistrar || true
       - name: auval (AU, native arm64)
         run: auval -v aufx Aima Aimx
@@ -124,9 +151,34 @@ jobs:
         run: |
           curl -sSLo pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip && unzip -q pv.zip
           PV=pluginval.app/Contents/MacOS/pluginval
-          $PV --strictness-level 10 --validate-in-process ~/Library/Audio/Plug-Ins/VST3/"AI Mix Assistant.vst3"
-          $PV --strictness-level 10 --validate-in-process ~/Library/Audio/Plug-Ins/Components/"AI Mix Assistant.component"
+          $PV --strictness-level 10 --validate-in-process "/Library/Audio/Plug-Ins/VST3/AI Mix Assistant.vst3"
+          $PV --strictness-level 10 --validate-in-process "/Library/Audio/Plug-Ins/Components/AI Mix Assistant.component"
       - name: Standalone launches
         run: |
-          "AIMixAssistant-macOS/AI Mix Assistant.app/Contents/MacOS/AI Mix Assistant" & PID=$!
+          "/Applications/AI Mix Assistant.app/Contents/MacOS/AI Mix Assistant" & PID=$!
           sleep 10; kill -0 $PID && echo "still running after 10 s"; kill $PID
+
+  # Direct download links (no zip from the Actions page) for builds of main
+  # that passed the macOS check:
+  #   https://github.com/kalprod/ai-mix-assistant/releases/latest/download/AIMixAssistant-macOS.pkg
+  publish:
+    needs: [build, verify-macos-latest]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Replace the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la dist
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest --target "$GITHUB_SHA" --title "Latest build" \
+            --notes "Built from ${GITHUB_SHA::7}. Mac: download AIMixAssistant-macOS.pkg and double-click it. Windows: AIMixAssistant-Windows.zip." \
+            dist/AIMixAssistant-macOS.pkg dist/AIMixAssistant-Windows.zip dist/AIMixAssistant-Linux.zip dist/AIMixAssistant-macOS.zip
