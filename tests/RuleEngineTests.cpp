@@ -125,7 +125,8 @@ TEST_CASE ("rules: aligned but anti-correlated pair -> polarity flip")
     p.delaySamples = 0.2f;
     p.delayCorrelation = -0.9f;
     mix.pairs.push_back (p);
-    auto* s = find (RuleEngine::evaluateRaw (mix, {}), "phase.polarity");
+    const auto out = RuleEngine::evaluateRaw (mix, {});
+    auto* s = find (out, "phase.polarity");
     REQUIRE (s != nullptr);
     CHECK (s->action.type == ActionType::InvertPolarity);
     CHECK (s->action.trackId == 2);   // lower priority track gets flipped

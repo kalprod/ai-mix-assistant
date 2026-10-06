@@ -114,6 +114,14 @@ static std::unique_ptr<SharedBus::Mapping> mapSharedMemory (const std::string& n
 
 void SharedBus::unlinkSharedMemory (const std::string&) {}
 #else
+// macOS reports a shared-memory object's size rounded up to whole pages, so
+// an existing segment of our size can read back as slightly larger.
+static bool sizeMatches (size_t actual, size_t expected)
+{
+    const auto page = (size_t) sysconf (_SC_PAGESIZE);
+    return actual == expected || (actual > expected && actual - expected < page);
+}
+
 static std::unique_ptr<SharedBus::Mapping> mapSharedMemory (const std::string& name, size_t size)
 {
     const std::string shmName = "/" + name;
@@ -128,7 +136,7 @@ static std::unique_ptr<SharedBus::Mapping> mapSharedMemory (const std::string& n
     {
         if (ftruncate (fd, (off_t) size) != 0) { close (fd); return {}; }   // zero-filled
     }
-    else if ((size_t) st.st_size != size)
+    else if (! sizeMatches ((size_t) st.st_size, size))
     {
         close (fd);   // segment from an incompatible build
         return {};
