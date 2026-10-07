@@ -22,6 +22,22 @@ public:
 
     std::function<void()> onRescan;
 
+    // How this DAW names its insert slots, and how to add plugins to them.
+    struct Daw
+    {
+        juce::String slotWord = "Insert slot";   // "Mixer insert slot", "Audio FX slot"...
+        juce::String howTo;                      // one line shown above the list
+    };
+    void setDaw (const Daw& d) { daw = d; repaint(); rows.repaint(); }
+    static Daw dawFor (const juce::String& hostName);   // "FL Studio", "Studio One", "Logic"...
+
+    // Slots the user has ticked as added, as "slotId=plugin name". A tick is
+    // dropped when the suggestion for that slot changes.
+    void setAdded (const juce::StringArray& added) { addedKeys = added; rows.repaint(); }
+    const juce::StringArray& getAdded() const noexcept { return addedKeys; }
+    std::function<void (const juce::StringArray&)> onAddedChanged;
+    static juce::String addedKey (const ChainSlot& s) { return juce::String (s.id) + "=" + juce::String (s.pickName); }
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -34,8 +50,11 @@ private:
         explicit Rows (ChainPanel& p) : owner (p) {}
         int heightFor (int width) const;
         void paint (juce::Graphics&) override;
+        void mouseUp (const juce::MouseEvent&) override;
+        void mouseMove (const juce::MouseEvent&) override;
 
     private:
+        juce::Rectangle<float> tickBox (size_t index) const;
         float rowHeight (const ChainSlot& s, float width) const;
         ChainPanel& owner;
     };
@@ -48,6 +67,8 @@ private:
     bool hasContext = false;
     ChainRecommendation rec;
     juce::String status;
+    Daw daw;
+    juce::StringArray addedKeys;
     bool scanning = false;
 
     juce::TextButton rescanButton { "Rescan plugins" };

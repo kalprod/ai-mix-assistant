@@ -73,6 +73,10 @@ public:
     void setTrackNameOverride (const juce::String& name);
     juce::String getTrackNameOverride() const { return trackNameOverride; }
 
+    // Chain slots the user ticked as added in their DAW; saved with the session.
+    juce::StringArray getChainAdded() const { return chainAdded; }
+    void setChainAdded (const juce::StringArray& added) { chainAdded = added; }
+
     // Make the mode/engine state follow the parameters immediately (normally
     // done by a 4 Hz timer). Used by the editor and by the headless checks.
     void syncModeNow() { timerCallback(); }
@@ -94,6 +98,7 @@ private:
     std::atomic<float>* roleParam = nullptr;
 
     juce::String trackNameOverride, hostTrackName;
+    juce::StringArray chainAdded;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (AIMixProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AIMixProcessor)

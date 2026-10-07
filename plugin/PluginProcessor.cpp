@@ -102,6 +102,7 @@ void AIMixProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = parameters.copyState();
     state.setProperty ("trackName", trackNameOverride, nullptr);
+    state.setProperty ("chainAdded", chainAdded.joinIntoString ("\n"), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -113,6 +114,8 @@ void AIMixProcessor::setStateInformation (const void* data, int sizeInBytes)
         {
             auto state = juce::ValueTree::fromXml (*xml);
             trackNameOverride = state.getProperty ("trackName").toString();
+            chainAdded = juce::StringArray::fromLines (state.getProperty ("chainAdded").toString());
+            chainAdded.removeEmptyStrings();
             parameters.replaceState (state);
             pushIdentityToAnalyzer();
         }

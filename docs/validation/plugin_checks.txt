@@ -11,6 +11,7 @@
 [PASS] state restores mode
 [PASS] state restores role
 [PASS] state restores track name
+[PASS] state restores which chain plugins were ticked as added
 [PASS] garbage state is ignored without crashing
 [PASS] VST3 scan reads moduleinfo.json and tags a 'warm' compressor as analog-style
 [PASS] VST3 scan skips instruments

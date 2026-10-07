@@ -150,6 +150,7 @@ void checkState()
         setParam (p, "mode", 1.0f);
         setParam (p, "role", p.parameters.getParameter ("role")->convertTo0to1 (5.0f));   // Bass
         p.setTrackNameOverride ("Bass DI");
+        p.setChainAdded ({ "cleanup_eq=Pro-Q 3 (FabFilter, AU)", "compressor=UADx LA-2A Gray (Universal Audio, AU)" });
         p.getStateInformation (state);
     }
     AIMixProcessor restored;
@@ -157,6 +158,8 @@ void checkState()
     check (restored.getMode() == AIMixProcessor::Mode::Master, "state restores mode");
     check (juce::roundToInt (restored.parameters.getRawParameterValue ("role")->load()) == 5, "state restores role");
     check (restored.getTrackNameOverride() == "Bass DI", "state restores track name");
+    check (restored.getChainAdded().size() == 2 && restored.getChainAdded()[1].startsWith ("compressor="),
+           "state restores which chain plugins were ticked as added");
 
     restored.setStateInformation ("garbage", 7);
     check (true, "garbage state is ignored without crashing");
@@ -351,9 +354,13 @@ std::shared_ptr<const aimix::MixReport> checkMultiInstance (const juce::File& ou
 
         setParam (kick, "role", kick.parameters.getParameter ("role")->convertTo0to1 ((float) aimix::TrackRole::Vocal));
         kick.setTrackNameOverride ("Lead Vox");
-        ed->refresh();
         for (int i = 0; i < 15; ++i)
             ed->refresh();
+        auto& panel = ed->getListenerView().getChainPanel();
+        panel.setDaw (aimix::ui::ChainPanel::dawFor ("FL Studio"));
+        const auto& vocal = panel.getRecommendation();
+        if (vocal.slots.size() > 1)
+            panel.setAdded ({ aimix::ui::ChainPanel::addedKey (vocal.slots[0]), aimix::ui::ChainPanel::addedKey (vocal.slots[1]) });
         editor->setSize (1400, 1300);
         savePng (*editor, outDir.getChildFile ("ui_listener_vocal_chain.png"));
         check (ed->getListenerView().getChainPanel().getRecommendation().role == aimix::TrackRole::Vocal,

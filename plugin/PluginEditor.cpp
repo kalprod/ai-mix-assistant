@@ -50,6 +50,13 @@ AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), proces
     masterView.onDismiss = [this] (const std::string& key) { processor.dismissSuggestion (key); };
     listenerView.getChainPanel().onRescan = masterView.getChainPanel().onRescan = [this] { library->rescan(); pushLibrary(); };
     library->changes.addChangeListener (this);
+    const auto daw = ChainPanel::dawFor (juce::PluginHostType().getHostDescription());
+    for (auto* panel : { &listenerView.getChainPanel(), &masterView.getChainPanel() })
+    {
+        panel->setDaw (daw);
+        panel->setAdded (processor.getChainAdded());
+        panel->onAddedChanged = [this] (const juce::StringArray& added) { processor.setChainAdded (added); };
+    }
     pushLibrary();
 
     setResizable (true, true);

@@ -107,7 +107,8 @@ void ChainPanel::paint (juce::Graphics& g)
     g.drawText (title, header.withWidth (titleW + 4.0f).withTrimmedBottom (14.0f), juce::Justification::centredLeft);
     g.setColour (colours::textDim);
     g.setFont (font (13.0f));
-    g.drawText ("From the plugins on this computer, analog models first. Top to bottom is the order to insert them.",
+    g.drawText (daw.howTo.isNotEmpty() ? daw.howTo
+                                       : juce::String ("From the plugins on this computer, analog models first. Top to bottom is the order to insert them."),
                 header.withTrimmedTop (24.0f).withTrimmedRight ((float) rescanButton.getWidth() + 230.0f),
                 juce::Justification::centredLeft, true);
 
@@ -137,10 +138,69 @@ void ChainPanel::resized()
 }
 
 //==============================================================================
+ChainPanel::Daw ChainPanel::dawFor (const juce::String& host)
+{
+    Daw d;
+    if (host.containsIgnoreCase ("FL Studio") || host.containsIgnoreCase ("Fruity"))
+        d = { "Mixer insert slot", "In the Mixer (F9), load these into this track's insert slots from the top down. Keep AI Mix Assistant in the last slot." };
+    else if (host.containsIgnoreCase ("Studio One"))
+        d = { "Insert", "Open this channel's Inserts in the Console (F3) and add these in order. Keep AI Mix Assistant at the bottom." };
+    else if (host.containsIgnoreCase ("Logic") || host.containsIgnoreCase ("GarageBand"))
+        d = { "Audio FX slot", "Click the empty Audio FX slots on this channel strip from the top down. Keep AI Mix Assistant in the lowest slot." };
+    else
+        d = { "Insert slot", "Add these to this track's insert slots from the top down. Keep AI Mix Assistant last." };
+    return d;
+}
+
+juce::Rectangle<float> ChainPanel::Rows::tickBox (size_t index) const
+{
+    float y = 0.0f;
+    const float width = (float) getWidth();
+    for (size_t i = 0; i < owner.rec.slots.size(); ++i)
+    {
+        const float h = rowHeight (owner.rec.slots[i], width);
+        if (i == index)
+            return { 14.0f + 5.0f, y + 14.0f + 44.0f, 20.0f, 20.0f };
+        y += h + kRowGap;
+    }
+    return {};
+}
+
+void ChainPanel::Rows::mouseMove (const juce::MouseEvent& e)
+{
+    bool over = false;
+    for (size_t i = 0; i < owner.rec.slots.size(); ++i)
+        over |= owner.rec.slots[i].pick >= 0 && tickBox (i).expanded (6.0f).contains (e.position);
+    setMouseCursor (over ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+}
+
+void ChainPanel::Rows::mouseUp (const juce::MouseEvent& e)
+{
+    for (size_t i = 0; i < owner.rec.slots.size(); ++i)
+    {
+        const auto& s = owner.rec.slots[i];
+        if (s.pick < 0 || ! tickBox (i).expanded (6.0f).contains (e.position))
+            continue;
+        const auto key = addedKey (s);
+        // One tick per slot: drop any older tick for a different plugin.
+        for (int k = owner.addedKeys.size(); --k >= 0;)
+            if (owner.addedKeys[k].startsWith (juce::String (s.id) + "=") && owner.addedKeys[k] != key)
+                owner.addedKeys.remove (k);
+        if (owner.addedKeys.contains (key))
+            owner.addedKeys.removeString (key);
+        else
+            owner.addedKeys.add (key);
+        repaint();
+        if (owner.onAddedChanged)
+            owner.onAddedChanged (owner.addedKeys);
+        return;
+    }
+}
+
 float ChainPanel::Rows::rowHeight (const ChainSlot& s, float width) const
 {
     const float leftW = leftColumnWidth (width) - kNumberW;
-    const float left = 24.0f + textHeight (juce::String (s.why), font (13.5f), leftW - 12.0f);
+    const float left = juce::jmax (70.0f, 42.0f + textHeight (juce::String (s.why), font (13.5f), leftW - 12.0f));
     float right = 40.0f;   // plugin well
     if (s.pick >= 0)
     {
@@ -209,7 +269,35 @@ void ChainPanel::Rows::paint (juce::Graphics& g)
             g.drawText ("OPTIONAL", juce::Rectangle<float> (left.getX() + lw + 10.0f, left.getY() - 22.0f, 80.0f, 22.0f),
                         juce::Justification::centredLeft);
         }
+        g.setColour (colours::accent);
+        g.setFont (font (11.0f, true));
+        g.drawText (owner.daw.slotWord.toUpperCase() + " " + juce::String (number - 1), left.removeFromTop (16.0f),
+                    juce::Justification::centredLeft, true);
         drawWrapped (g, juce::String (s.why), font (13.5f), colours::textDim, left.withTrimmedTop (2.0f).withTrimmedRight (12.0f));
+
+        // Tick box: "I've added this one".
+        if (s.pick >= 0)
+        {
+            const bool added = owner.addedKeys.contains (addedKey (s));
+            auto box = tickBox ((size_t) (number - 2));
+            g.setColour (added ? colours::meterGreen : colours::panelRaised);
+            g.fillRoundedRectangle (box, 4.0f);
+            g.setColour (added ? colours::meterGreen.darker (0.3f) : colours::outline);
+            g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.5f);
+            if (added)
+            {
+                juce::Path tick;
+                tick.startNewSubPath (box.getX() + 4.5f, box.getCentreY());
+                tick.lineTo (box.getX() + 8.5f, box.getBottom() - 5.0f);
+                tick.lineTo (box.getRight() - 4.0f, box.getY() + 5.0f);
+                g.setColour (juce::Colours::white);
+                g.strokePath (tick, juce::PathStrokeType (2.2f));
+            }
+            g.setColour (added ? colours::meterGreen.darker (0.4f) : colours::textFaint);
+            g.setFont (font (9.5f, true));
+            g.drawText (added ? "ADDED" : "ADD", box.translated (-12.0f, 21.0f).withWidth (44.0f).withHeight (12.0f),
+                        juce::Justification::centred);
+        }
 
         // Which plugin: a dark display with the name and an analog badge.
         auto right = inner;
