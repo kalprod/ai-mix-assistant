@@ -32,7 +32,9 @@ add_library (aimix_core STATIC
     core/src/Suggestion.cpp
     core/src/RuleEngine.cpp
     core/src/MixEngine.cpp
-    core/src/SyntheticSession.cpp)
+    core/src/SyntheticSession.cpp
+    core/src/PluginLibrary.cpp
+    core/src/ChainRecommender.cpp)
 target_include_directories (aimix_core PUBLIC core/include)
 find_package (Threads REQUIRED)
 target_link_libraries (aimix_core PUBLIC Threads::Threads)
@@ -56,7 +58,8 @@ if (AIMIX_BUILD_TESTS)
         tests/AnalyzerTests.cpp
         tests/RuleEngineTests.cpp
         tests/RoleClassifierTests.cpp
-        tests/EndToEndTests.cpp)
+        tests/EndToEndTests.cpp
+        tests/PluginLibraryTests.cpp)
     target_link_libraries (aimix_tests PRIVATE aimix_core)
     add_test (NAME aimix_tests COMMAND aimix_tests)
 

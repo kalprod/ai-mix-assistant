@@ -71,6 +71,28 @@ MasterView::MasterView()
     rack.onSelectionChanged = [this] (int64_t id) { diagnostics.setTrackFilter (id); if (current) rack.setReport (*current); };
     diagnostics.onDismiss = [this] (const std::string& key) { if (onDismiss) onDismiss (key); };
     diagnostics.onExpandChanged = [this] (bool) { resized(); repaint(); };
+
+    addChildComponent (chain);
+    for (auto* b : { &adviceButton, &chainButton })
+    {
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (5150);
+        b->setColour (juce::TextButton::buttonColourId, colours::panelRaised);
+        b->setColour (juce::TextButton::buttonOnColourId, colours::amber);
+        b->setColour (juce::TextButton::textColourOffId, colours::textDim);
+        b->setColour (juce::TextButton::textColourOnId, colours::amberText);
+        addAndMakeVisible (b);
+    }
+    adviceButton.setToggleState (true, juce::dontSendNotification);
+    adviceButton.onClick = [this] { showChain (false); };
+    chainButton.onClick = [this] { showChain (true); };
+}
+
+void MasterView::showChain (bool shouldShow)
+{
+    (shouldShow ? chainButton : adviceButton).setToggleState (true, juce::dontSendNotification);
+    resized();
+    repaint();
 }
 
 void MasterView::setReport (std::shared_ptr<const MixReport> report)
@@ -86,7 +108,7 @@ void MasterView::setReport (std::shared_ptr<const MixReport> report)
 
 void MasterView::paint (juce::Graphics& g)
 {
-    if (current != nullptr && current->isActiveMaster && current->tracks.empty() && rack.isVisible())
+    if (current != nullptr && current->isActiveMaster && current->tracks.empty() && rack.isVisible() && ! isShowingChain())
     {
         // Only the mix bus is analysed: say what that covers and how to get more.
         auto note = rack.getBounds().toFloat().withTrimmedTop (24.0f).withTrimmedLeft ((float) ChannelStrip::kWidth + 12.0f).reduced (4.0f, 0.0f);
@@ -119,7 +141,23 @@ void MasterView::resized()
 {
     auto r = getLocalBounds();
     summary.setBounds (r.removeFromTop (66));
-    r.removeFromTop (14);
+    r.removeFromTop (12);
+    auto tabs = r.removeFromTop (30);
+    adviceButton.setBounds (tabs.removeFromLeft (110));
+    tabs.removeFromLeft (6);
+    chainButton.setBounds (tabs.removeFromLeft (140));
+    r.removeFromTop (12);
+
+    const bool showingChain = isShowingChain();
+    chain.setVisible (showingChain);
+    diagnostics.setVisible (! showingChain);
+    if (showingChain)
+    {
+        rack.setVisible (false);
+        chain.setBounds (r);
+        return;
+    }
+
     // Enlarged advice takes the whole area below the read-out.
     rack.setVisible (! diagnostics.isExpanded());
     if (! diagnostics.isExpanded())

@@ -179,6 +179,18 @@ juce::String AIMixProcessor::getRoleDisplay() const
     return isMasterEngineOnline() ? "Auto: listening..." : "Auto";
 }
 
+aimix::TrackRole AIMixProcessor::getEffectiveRole() const
+{
+    if (getMode() == Mode::Master)
+        return aimix::TrackRole::MasterBus;
+    const auto chosen = (aimix::TrackRole) juce::roundToInt (roleParam->load());
+    if (chosen != aimix::TrackRole::Unknown)
+        return chosen;
+    const int slot = getBusSlot();
+    const auto detected = slot >= 0 && bus != nullptr ? bus->slot (slot).detectedRole.load (std::memory_order_relaxed) : 0u;
+    return (detected & aimix::kDetectedRoleValid) != 0 ? (aimix::TrackRole) (detected & 0xffu) : aimix::TrackRole::Unknown;
+}
+
 void AIMixProcessor::setTrackNameOverride (const juce::String& name)
 {
     trackNameOverride = name.trim();

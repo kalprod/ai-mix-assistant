@@ -48,6 +48,9 @@ AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), proces
     addChildComponent (listenerView);
     addChildComponent (masterView);
     masterView.onDismiss = [this] (const std::string& key) { processor.dismissSuggestion (key); };
+    listenerView.getChainPanel().onRescan = masterView.getChainPanel().onRescan = [this] { library->rescan(); pushLibrary(); };
+    library->changes.addChangeListener (this);
+    pushLibrary();
 
     setResizable (true, true);
     setResizeLimits (960, 620, 2600, 1700);
@@ -60,6 +63,7 @@ AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), proces
 AIMixEditor::~AIMixEditor()
 {
     stopTimer();
+    library->changes.removeChangeListener (this);
     setLookAndFeel (nullptr);
 }
 
@@ -73,7 +77,75 @@ void AIMixEditor::updateModeVisibility()
     for (juce::Component* c : { (juce::Component*) &roleBox, (juce::Component*) &roleLabel,
                                 (juce::Component*) &nameEditor, (juce::Component*) &nameLabel })
         c->setVisible (! master);
+    updateChainContext();
     repaint();
+}
+
+void AIMixEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    pushLibrary();
+}
+
+void AIMixEditor::setLibraryOverride (std::vector<aimix::PluginInfo> plugins)
+{
+    libraryOverride = std::move (plugins);
+    pushLibrary();
+}
+
+void AIMixEditor::pushLibrary()
+{
+    std::vector<aimix::PluginInfo> plugins;
+    juce::String status;
+    bool scanning = false;
+    if (libraryOverride.has_value())
+    {
+        plugins = *libraryOverride;
+        int analog = 0;
+        for (const auto& p : plugins)
+            analog += p.character == aimix::PluginCharacter::Analog ? 1 : 0;
+        status = "Found " + juce::String ((int) plugins.size()) + " plugins, " + juce::String (analog) + " analog models";
+    }
+    else
+    {
+        plugins = library->getPlugins();
+        status = library->getStatusText();
+        scanning = library->isScanning();
+    }
+    listenerView.getChainPanel().setLibrary (plugins, status, scanning);
+    masterView.getChainPanel().setLibrary (std::move (plugins), status, scanning);
+    updateChainContext();
+}
+
+void AIMixEditor::updateChainContext()
+{
+    aimix::ChainContext ctx;
+    ctx.preferredFormat = processor.wrapperType == juce::AudioProcessor::wrapperType_AudioUnit ? "AU" : "VST3";
+
+    if (shownMode == AIMixProcessor::Mode::Master)
+    {
+        auto report = reportOverride != nullptr ? reportOverride : processor.getLatestReport();
+        if (report != nullptr && report->hasMaster)
+        {
+            const auto measured = aimix::chainContextFor (report->master.view, true);
+            ctx = measured;
+            ctx.preferredFormat = processor.wrapperType == juce::AudioProcessor::wrapperType_AudioUnit ? "AU" : "VST3";
+        }
+        ctx.master = true;
+        ctx.role = aimix::TrackRole::MasterBus;
+        masterView.getChainPanel().setContext (ctx);
+        return;
+    }
+
+    const auto& m = processor.getMeters();
+    ctx.role = processor.getEffectiveRole();
+    const float peak = juce::jmax (m.peakDb[0].load(), m.peakDb[1].load());
+    const float rms = juce::jmax (m.rmsDb[0].load(), m.rmsDb[1].load());
+    ctx.measured = peak > -90.0f;
+    ctx.peakDb = peak;
+    // Round so the suggestion text doesn't flicker with every meter update.
+    ctx.crestDb = std::round (peak - rms);
+    ctx.sideToMidDb = m.sideToMidDb.load();
+    listenerView.getChainPanel().setContext (ctx);
 }
 
 void AIMixEditor::timerCallback()
@@ -108,6 +180,10 @@ void AIMixEditor::timerCallback()
         s.sideToMidDb = m.sideToMidDb.load();
         listenerView.setStatus (s);
     }
+
+    // The chain only changes with the role or big changes in the sound.
+    if (++chainTick % 15 == 0)
+        updateChainContext();
 }
 
 void AIMixEditor::paint (juce::Graphics& g)

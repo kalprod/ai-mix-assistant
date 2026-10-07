@@ -9,6 +9,7 @@
 
 #include "../plugin/PluginEditor.h"
 #include "../plugin/PluginProcessor.h"
+#include "../plugin/library/PluginLibraryService.h"
 #include "aimix/SyntheticSession.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -161,6 +162,118 @@ void checkState()
     check (true, "garbage state is ignored without crashing");
 }
 
+// A typical studio plugin folder, for snapshots that don't depend on what is
+// installed on the machine running the checks.
+std::vector<aimix::PluginInfo> demoLibrary()
+{
+    struct Raw { const char* name; const char* vendor; const char* format; const char* category; };
+    const Raw raw[] = {
+        { "Pro-Q 3", "FabFilter", "AU", "Fx|EQ" },
+        { "Pro-L 2", "FabFilter", "AU", "Fx|Dynamics" },
+        { "Pro-C 2", "FabFilter", "AU", "Fx|Dynamics" },
+        { "Pro-DS", "FabFilter", "AU", "Fx|Dynamics" },
+        { "UADx Pultec EQP-1A", "Universal Audio", "AU", "" },
+        { "UADx 1176 Rev E", "Universal Audio", "AU", "" },
+        { "UADx LA-2A Gray", "Universal Audio", "AU", "" },
+        { "UADx SSL G Bus Compressor", "Universal Audio", "AU", "" },
+        { "UADx API Vision Channel Strip", "Universal Audio", "AU", "" },
+        { "Pre 1973", "Arturia", "AU", "" },
+        { "Comp FET-76", "Arturia", "AU", "" },
+        { "J37 Tape", "Waves", "AU", "" },
+        { "Kramer Master Tape", "Waves", "AU", "" },
+        { "Rev PLATE-140", "Arturia", "AU", "" },
+        { "Decapitator", "Soundtoys", "AU", "" },
+        { "AUNBandEQ", "Apple", "AU", "EQ" },
+        { "AUPeakLimiter", "Apple", "AU", "Effect" },
+        { "ChannelEQ", "Apple", "AU", "EQ" },
+    };
+    std::vector<aimix::PluginInfo> out;
+    for (const auto& r : raw)
+    {
+        aimix::PluginInfo p;
+        p.name = r.name;
+        p.vendor = r.vendor;
+        p.format = r.format;
+        p.reportedCategory = r.category;
+        p.id = std::string (r.format) + ":" + r.vendor + "/" + r.name;
+        aimix::tagPlugin (p);
+        out.push_back (std::move (p));
+    }
+    return out;
+}
+
+void checkPluginScanner()
+{
+    using namespace aimix::library;
+    juce::TemporaryFile tmp;
+    const auto root = tmp.getFile();
+    root.createDirectory();
+
+    // A VST3 bundle with moduleinfo.json (JSON5 trailing commas, one instrument to skip).
+    const auto withInfo = root.getChildFile ("Warm Bus.vst3");
+    withInfo.getChildFile ("Contents/Resources").createDirectory();
+    withInfo.getChildFile ("Contents/Resources/moduleinfo.json").replaceWithText (R"({
+        "Name": "Warm Bus", "Version": "1.2.0",
+        "Factory Info": { "Vendor": "Analog Co", },
+        "Classes": [
+            { "CID": "ABC123", "Category": "Audio Module Class", "Name": "Warm Bus Comp", "Vendor": "Analog Co",
+              "Version": "1.2.0", "Sub Categories": [ "Fx", "Dynamics", ], },
+            { "CID": "DEF456", "Category": "Audio Module Class", "Name": "Warm Synth",
+              "Sub Categories": [ "Instrument", "Synth" ] },
+            { "CID": "GHI789", "Category": "Component Controller Class", "Name": "Warm Bus Comp" },
+        ],
+    })");
+
+    // A macOS-style bundle with only an Info.plist.
+    const auto withPlist = root.getChildFile ("Some EQ.vst3");
+    withPlist.getChildFile ("Contents").createDirectory();
+    withPlist.getChildFile ("Contents/Info.plist").replaceWithText (
+        "<plist><dict><key>CFBundleIdentifier</key><string>com.pultecstyle.someeq</string>"
+        "<key>CFBundleName</key><string>Pultec Style EQ</string>"
+        "<key>CFBundleShortVersionString</key><string>2.0</string></dict></plist>");
+
+    ScanOptions options;
+    options.audioUnits = false;
+    options.vst2 = false;
+    options.extraVst3Folders.add (root);
+    const auto found = scanInstalledPlugins (options);
+
+    auto findByName = [&found] (const char* name) -> const aimix::PluginInfo*
+    {
+        for (const auto& p : found)
+            if (p.name == name)
+                return &p;
+        return nullptr;
+    };
+    const auto* comp = findByName ("Warm Bus Comp");
+    check (comp != nullptr && comp->vendor == "Analog Co" && comp->does (aimix::kFnCompressor)
+               && comp->character == aimix::PluginCharacter::AnalogInspired,
+           "VST3 scan reads moduleinfo.json and tags a 'warm' compressor as analog-style");
+    check (findByName ("Warm Synth") == nullptr, "VST3 scan skips instruments");
+    const auto* eq = findByName ("Pultec Style EQ");
+    check (eq != nullptr && eq->family == "Pultec" && eq->version == "2.0", "VST3 scan falls back to Info.plist");
+
+    // Save, load, and keep the user's own changes across a rescan.
+    auto lib = demoLibrary();
+    lib[0].favourite = true;
+    lib[1].tagSource = aimix::TagSource::User;
+    lib[1].character = aimix::PluginCharacter::AnalogInspired;
+    int64_t when = 0;
+    const auto json = juce::JSON::toString (PluginLibraryService::toJson (lib, 1234));
+    auto loaded = PluginLibraryService::fromJson (juce::JSON::parse (json), &when);
+    bool same = loaded.size() == lib.size() && when == 1234;
+    for (size_t i = 0; same && i < lib.size(); ++i)
+        same = loaded[i].id == lib[i].id && loaded[i].functions == lib[i].functions && loaded[i].family == lib[i].family
+            && loaded[i].character == lib[i].character && loaded[i].favourite == lib[i].favourite;
+    check (same, "plugin library saves and loads as JSON");
+
+    auto fresh = demoLibrary();
+    PluginLibraryService::keepUserChanges (fresh, loaded);
+    check (fresh[0].favourite && fresh[1].character == aimix::PluginCharacter::AnalogInspired,
+           "a rescan keeps favourites and tags you corrected");
+    root.deleteRecursively();
+}
+
 std::shared_ptr<const aimix::MixReport> checkMultiInstance (const juce::File& outDir)
 {
     aimix::SharedBus::unlinkSharedMemory (aimix::kDefaultBusName);
@@ -228,8 +341,23 @@ std::shared_ptr<const aimix::MixReport> checkMultiInstance (const juce::File& ou
     // Listener editor snapshot from the real processor.
     {
         std::unique_ptr<juce::AudioProcessorEditor> editor (kick.createEditor());
-        static_cast<AIMixEditor*> (editor.get())->refresh();
+        auto* ed = static_cast<AIMixEditor*> (editor.get());
+        ed->setLibraryOverride (demoLibrary());
+        ed->refresh();
         savePng (*editor, outDir.getChildFile ("ui_listener.png"));
+        const auto& chain = ed->getListenerView().getChainPanel().getRecommendation();
+        check (chain.role == aimix::TrackRole::Kick && chain.missingCount == 0 && chain.analogCount >= 2,
+               "the kick's window suggests a full chain from the plugins found, analog first");
+
+        setParam (kick, "role", kick.parameters.getParameter ("role")->convertTo0to1 ((float) aimix::TrackRole::Vocal));
+        kick.setTrackNameOverride ("Lead Vox");
+        ed->refresh();
+        for (int i = 0; i < 15; ++i)
+            ed->refresh();
+        editor->setSize (1400, 1300);
+        savePng (*editor, outDir.getChildFile ("ui_listener_vocal_chain.png"));
+        check (ed->getListenerView().getChainPanel().getRecommendation().role == aimix::TrackRole::Vocal,
+               "changing the role changes the suggested chain");
     }
 
     for (auto* p : { &kick, &synth, &master })
@@ -317,6 +445,20 @@ void renderMasterSnapshot (const juce::File& outDir)
         }
     }
 
+    // The mix bus chain tab.
+    {
+        ed->setReportOverride (report);
+        ed->setLibraryOverride (demoLibrary());
+        ed->refresh();
+        ed->getMasterView().showChain (true);
+        savePng (*editor, outDir.getChildFile ("ui_master_chain.png"));
+        const auto& chain = ed->getMasterView().getChainPanel().getRecommendation();
+        check (chain.master && chain.slots.size() == 4 && chain.slots[0].pickFamily == "SSL"
+                   && chain.slots[3].pickName.find ("Pro-L") != std::string::npos,
+               "the master window suggests bus comp, program EQ, tape and a clean limiter");
+        ed->getMasterView().showChain (false);
+    }
+
     juce::FileOutputStream json (outDir.getChildFile ("synthetic_session_suggestions.json"));
     json.setPosition (0);
     json.truncate();
@@ -334,6 +476,7 @@ int main (int argc, char** argv)
     checkLayouts();
     checkNonDestructiveAndRealtime();
     checkState();
+    checkPluginScanner();
     checkMultiInstance (outDir);
     renderMasterSnapshot (outDir);
 

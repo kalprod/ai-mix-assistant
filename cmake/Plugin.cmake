@@ -41,12 +41,21 @@ set (AIMIX_UI_SOURCES
     plugin/ui/ChannelRack.cpp
     plugin/ui/DiagnosticCards.cpp
     plugin/ui/MasterView.cpp
-    plugin/ui/ListenerView.cpp)
+    plugin/ui/ListenerView.cpp
+    plugin/ui/ChainPanel.cpp)
+
+set (AIMIX_LIBRARY_SOURCES
+    plugin/library/PluginScanner.cpp
+    plugin/library/PluginLibraryService.cpp)
+if (APPLE)
+    list (APPEND AIMIX_LIBRARY_SOURCES plugin/library/AuScan.mm)
+endif()
 
 target_sources (AIMixAssistant PRIVATE
     plugin/PluginProcessor.cpp
     plugin/PluginEditor.cpp
-    ${AIMIX_UI_SOURCES})
+    ${AIMIX_UI_SOURCES}
+    ${AIMIX_LIBRARY_SOURCES})
 
 target_compile_definitions (AIMixAssistant PUBLIC
     JUCE_WEB_BROWSER=0
@@ -62,6 +71,10 @@ target_link_libraries (AIMixAssistant
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+if (APPLE)
+    target_link_libraries (AIMixAssistant PRIVATE "-framework AudioToolbox")
+endif()
 
 # ---------------------------------------------------------------------------
 # Host-like checks against the real AudioProcessor + editor, and PNG snapshots

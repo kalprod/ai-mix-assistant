@@ -12,6 +12,11 @@
 [PASS] state restores role
 [PASS] state restores track name
 [PASS] garbage state is ignored without crashing
+[PASS] VST3 scan reads moduleinfo.json and tags a 'warm' compressor as analog-style
+[PASS] VST3 scan skips instruments
+[PASS] VST3 scan falls back to Info.plist
+[PASS] plugin library saves and loads as JSON
+[PASS] a rescan keeps favourites and tags you corrected
 [PASS] master instance started its engine
 [PASS] listeners claimed distinct bus slots
 [PASS] master owns the bus
@@ -19,6 +24,9 @@
 [PASS] master publishes its own mix-bus analysis
 [PASS] clipping on the hot synth reaches the master as a suggestion
 [PASS] wrote ui_listener.png
+[PASS] the kick's window suggests a full chain from the plugins found, analog first
+[PASS] wrote ui_listener_vocal_chain.png
+[PASS] changing the role changes the suggested chain
 [PASS] wrote ui_master.png
 [PASS] wrote ui_master_small.png
 [PASS] wrote ui_master_auto_roles.png
@@ -27,5 +35,7 @@
 [PASS] advice panel can be enlarged and shrunk again
 [PASS] wrote ui_master_bus_only.png
 [PASS] wrote ui_master_bus_only_steps.png
+[PASS] wrote ui_master_chain.png
+[PASS] the master window suggests bus comp, program EQ, tape and a clean limiter
 
 ALL PLUGIN CHECKS PASSED (0 failed)

@@ -67,4 +67,9 @@ void ListenerView::paint (juce::Graphics& g)
     }
 }
 
+void ListenerView::resized()
+{
+    chain.setBounds (getLocalBounds().withTrimmedTop (kMetersHeight + 18));
+}
+
 } // namespace aimix::ui

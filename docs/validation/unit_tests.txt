@@ -1,33 +1,33 @@
 [PASS] ring: FIFO order, capacity and empty/full behaviour                 0.0 ms
 [PASS] ring: index wrap-around past 2^32 boundary stays consistent         1.0 ms
-[PASS] ring: concurrent producer/consumer delivers 2M items in order with no loss    169.0 ms
-[PASS] bus: slots can be claimed until full, released and re-claimed       3.2 ms
-[PASS] bus: publisher RAII claims a slot and frees it on destruction       3.2 ms
+[PASS] ring: concurrent producer/consumer delivers 2M items in order with no loss    190.5 ms
+[PASS] bus: slots can be claimed until full, released and re-claimed       3.3 ms
+[PASS] bus: publisher RAII claims a slot and frees it on destruction       3.7 ms
 [PASS] bus: only one master engine at a time, takeover after timeout       3.0 ms
-[PASS] bus/shm: two mappings of the same segment see each other's frames      3.8 ms
-[PASS] bus/shm: frames cross a real process boundary; dead owner's slot is reclaimed      4.8 ms
+[PASS] bus/shm: two mappings of the same segment see each other's frames      4.6 ms
+[PASS] bus/shm: frames cross a real process boundary; dead owner's slot is reclaimed      5.5 ms
 [PASS] bus/shm: incompatible segment from another build falls back to process-local      2.4 ms
 [PASS] fft: forward + inverse round-trips                                  0.1 ms
 [PASS] fft: bin-centred full-scale sine reads 0 dB in the right bin        0.1 ms
-[PASS] lufs: 997 Hz full-scale sine in both channels reads 0.0 LUFS (BS.1770 calibration)     22.4 ms
-[PASS] lufs: EBU Tech 3341 case 1 (stereo 1 kHz at -23 dBFS reads -23 LUFS)     23.2 ms
-[PASS] lufs: EBU Tech 3341 case 3 relative gate (-36 / -23 / -36 dBFS -> -23 LUFS)     91.1 ms
-[PASS] lufs: absolute gate ignores silence; short-term follows the signal    283.4 ms
+[PASS] lufs: 997 Hz full-scale sine in both channels reads 0.0 LUFS (BS.1770 calibration)     21.3 ms
+[PASS] lufs: EBU Tech 3341 case 1 (stereo 1 kHz at -23 dBFS reads -23 LUFS)     20.5 ms
+[PASS] lufs: EBU Tech 3341 case 3 relative gate (-36 / -23 / -36 dBFS -> -23 LUFS)     79.5 ms
+[PASS] lufs: absolute gate ignores silence; short-term follows the signal    267.2 ms
 [PASS] masking: identical spectra overlap fully, disjoint spectra not at all      0.5 ms
 [PASS] masking: partially overlapping material scores in between           0.2 ms
 [PASS] energy share below a frequency                                      0.2 ms
 [PASS] mid/side and correlation: mono, anti-phase and decorrelated signals      0.8 ms
-[PASS] delay: integer offsets either direction, with and without PHAT      1.7 ms
-[PASS] delay: sub-sample offset on band-limited material                   2.6 ms
-[PASS] delay: polarity inversion and unrelated signals                     0.6 ms
-[PASS] analyzer: process block is non-destructive (bit-identical input)      0.7 ms
-[PASS] analyzer: audio-thread path performs zero heap allocations         20.7 ms
+[PASS] delay: integer offsets either direction, with and without PHAT      1.5 ms
+[PASS] delay: sub-sample offset on band-limited material                   2.3 ms
+[PASS] delay: polarity inversion and unrelated signals                     0.5 ms
+[PASS] analyzer: process block is non-destructive (bit-identical input)      0.6 ms
+[PASS] analyzer: audio-thread path performs zero heap allocations         21.7 ms
 [PASS] analyzer: frames are aligned to the timeline grid; first frame after a seek is flagged partial      0.5 ms
     short-term -3.84 LUFS
-[PASS] analyzer: payload carries correct RMS, peak, correlation and spectrum      7.0 ms
-[PASS] analyzer: mono input, silence flag, and drop-when-full with no FFT work      0.4 ms
+[PASS] analyzer: payload carries correct RMS, peak, correlation and spectrum      7.5 ms
+[PASS] analyzer: mono input, silence flag, and drop-when-full with no FFT work      0.5 ms
 [PASS] analyzer: track name handoff truncates safely and never splits UTF-8      0.0 ms
-[PASS] rules: clipping track gets a critical gain cut that lands at -1 dBFS      0.0 ms
+[PASS] rules: clipping track gets a critical gain cut that lands at -1 dBFS      0.1 ms
 [PASS] rules: masking cut goes on the lower-priority track at the clashing band      0.0 ms
 [PASS] rules: two centred mono instruments that mask get a pan suggestion      0.0 ms
 [PASS] rules: stable inter-track delay produces a time-align action on the earlier track      0.0 ms
@@ -35,7 +35,7 @@
 [PASS] rules: negative stereo correlation and wide low end on a single track      0.0 ms
 [PASS] rules: inactive tracks produce nothing                              0.0 ms
 [PASS] rules: cards stay until the problem is fixed, freeze in silence, then clear      0.1 ms
-[PASS] rules: an intermittent condition shows one steady card instead of blinking      0.8 ms
+[PASS] rules: an intermittent condition shows one steady card instead of blinking      1.0 ms
 [PASS] rules: a measurement hovering at a threshold doesn't toggle its card      0.2 ms
 [PASS] rules: with only the mix bus, tonal problems are fixed on the mix bus      0.0 ms
 [PASS] rules: results sorted by severity, JSON output escapes names        0.0 ms
@@ -53,9 +53,9 @@
     strummed guitar  -> Unknown
     piano            -> Unknown
     synth lead       -> Unknown
-[PASS] auto role: kick, snare, hats, loop, bass, vocal and instruments are recognised   1301.2 ms
-[PASS] auto role: the result doesn't depend on track level or host block size   3903.4 ms
-[PASS] auto role: waits for enough signal, ignores silence, and doesn't flip-flop    124.6 ms
+[PASS] auto role: kick, snare, hats, loop, bass, vocal and instruments are recognised   1252.3 ms
+[PASS] auto role: the result doesn't depend on track level or host block size   3616.1 ms
+[PASS] auto role: waits for enough signal, ignores silence, and doesn't flip-flop    125.7 ms
     16 suggestions after 10 s of audio:
       [critical] gain.clipping            'Synth Lead' is clipping  ->  Gain -1.8 dB
       [info    ] mix.loudness             Mix is louder than the loudness target  ->  Gain -3.4 dB
@@ -74,15 +74,25 @@
       [info    ] depth.tips               Create space without clutter  ->  
       [info    ] tip.final                Trust your ears  ->  
     Lead Vox loudness swing 0.5 LU
-[PASS] e2e: synthetic session -> listeners -> bus -> master engine -> expected diagnoses   1297.3 ms
-[PASS] e2e: second master engine on the same bus stays passive           136.3 ms
-[PASS] e2e: engine thread runs and publishes reports                      22.3 ms
-[PASS] e2e: Auto role tracks are detected by the master engine and reported back to the Listener   1055.7 ms
+[PASS] e2e: synthetic session -> listeners -> bus -> master engine -> expected diagnoses   1208.3 ms
+[PASS] e2e: second master engine on the same bus stays passive           125.2 ms
+[PASS] e2e: engine thread runs and publishes reports                      22.2 ms
+[PASS] e2e: Auto role tracks are detected by the master engine and reported back to the Listener    976.5 ms
     4 cards from the mix bus alone:
       mix.loudness       Mix is louder than the loudness target  ->  Gain -3.4 dB
       eq.mix_harsh       Mix is harsh around 2.5 kHz  ->  EQ bell -2.9 dB @ 2.5 kHz, Q 4.0
       depth.tips         Create space without clutter  ->  
       tip.final          Trust your ears  ->  
-[PASS] e2e: master bus only gives steady, useful cards on a full mix    2201.4 ms
+[PASS] e2e: master bus only gives steady, useful cards on a full mix    2129.2 ms
+[PASS] plugin library: name tokens split camel case and digits             0.0 ms
+[PASS] plugin library: well-known hardware models are tagged analog with their family      0.1 ms
+[PASS] plugin library: clean digital plugins stay digital                  0.0 ms
+[PASS] plugin library: unknown plugins fall back to name words, then their category      0.0 ms
+[PASS] plugin library: function lists round-trip through text              0.0 ms
+[PASS] chains: a vocal chain puts analog models first and a clean EQ for the clean-up      0.1 ms
+[PASS] chains: the master chain is bus comp, program EQ, tape, then a clean limiter      0.1 ms
+[PASS] chains: each plugin is used once and missing slots are counted      0.0 ms
+[PASS] chains: knob starting points follow the measurements                0.1 ms
+[PASS] plugin library: an EQ named 'Channel EQ' is not a channel strip      0.0 ms
 
-50 tests, 0 failed checks
+60 tests, 0 failed checks
