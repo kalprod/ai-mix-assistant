@@ -6,6 +6,7 @@
 #include "library/PluginLibraryService.h"
 #include "ui/ListenerView.h"
 #include "ui/MasterView.h"
+#include "ui/StylePicker.h"
 
 class AIMixEditor final : public juce::AudioProcessorEditor,
                           private juce::Timer,
@@ -28,6 +29,8 @@ public:
     void setLibraryOverride (std::vector<aimix::PluginInfo> plugins);
     aimix::ui::MasterView& getMasterView() noexcept { return masterView; }
     aimix::ui::ListenerView& getListenerView() noexcept { return listenerView; }
+    aimix::ui::StylePicker& getStylePicker() noexcept { return stylePicker; }
+    void showStylePicker (bool show);
 
 private:
     static constexpr int kHeaderHeight = 62;
@@ -37,6 +40,8 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void pushLibrary();
     void updateChainContext();
+    void updateStyle();
+    void updateStyleButtonText();
 
     AIMixProcessor& processor;
     aimix::ui::RetroLookAndFeel lookAndFeel;   // declared first so it outlives the child widgets
@@ -48,6 +53,10 @@ private:
 
     aimix::ui::ListenerView listenerView;
     aimix::ui::MasterView masterView;
+    aimix::ui::StylePicker stylePicker;
+    juce::TextButton styleButton;
+    aimix::MixStyle shownStyle;
+    bool pickerSkipped = false;
     std::shared_ptr<const aimix::MixReport> reportOverride;
     juce::SharedResourcePointer<aimix::library::PluginLibraryService> library;
     std::optional<std::vector<aimix::PluginInfo>> libraryOverride;

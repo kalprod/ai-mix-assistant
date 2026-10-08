@@ -6,7 +6,7 @@ namespace
 {
 bool cancelled (const std::atomic<bool>* cancel) { return cancel != nullptr && cancel->load(); }
 
-bool isOwnPlugin (const juce::String& name) { return name.containsIgnoreCase ("AI Mix Assistant"); }
+bool isOwnPlugin (const juce::String& name) { return name.containsIgnoreCase ("AI Mix Assistant") || name.containsIgnoreCase ("K MASTER"); }
 
 // The <string> after <key>name</key> in an Info.plist.
 juce::String plistString (const juce::String& plist, const char* key)
@@ -100,6 +100,29 @@ void addFolder (juce::Array<juce::File>& list, const juce::File& f)
     if (f.isDirectory())
         list.addIfNotAlreadyThere (f);
 }
+
+// Lower-case letters and digits only: "Pro-Q 3" -> "proq3".
+std::string squash (const juce::String& s)
+{
+    std::string out;
+    for (auto c : s.toLowerCase())
+        if (juce::CharacterFunctions::isLetterOrDigit (c))
+            out += (char) c;
+    return out;
+}
+
+// Does a preset folder name belong to this plugin? "FabFilter Pro-Q 3" folder
+// fits "Pro-Q 3"; a bare vendor folder ("FabFilter") fits nothing.
+bool folderFits (const std::string& folder, const std::string& plugin, const std::string& vendor)
+{
+    if (folder.empty() || plugin.empty() || folder == vendor)
+        return false;
+    if (folder == plugin)
+        return true;
+    const auto& shorter = folder.size() < plugin.size() ? folder : plugin;
+    const auto& longer = folder.size() < plugin.size() ? plugin : folder;
+    return shorter.size() >= 4 && longer.find (shorter) != std::string::npos;
+}
 } // namespace
 
 juce::Array<juce::File> defaultVst3Folders()
@@ -139,6 +162,75 @@ juce::Array<juce::File> defaultVst2Folders()
     addFolder (out, juce::File ("/usr/local/lib/vst"));
    #endif
     return out;
+}
+
+juce::Array<juce::File> defaultPresetFolders()
+{
+    juce::Array<juce::File> out;
+    const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    const auto docs = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+   #if JUCE_MAC
+    addFolder (out, home.getChildFile ("Library/Audio/Presets"));
+    addFolder (out, juce::File ("/Library/Audio/Presets"));
+    addFolder (out, home.getChildFile ("Music/Audio Music Apps/Plug-In Settings"));   // Logic
+   #elif JUCE_WINDOWS
+    addFolder (out, docs.getChildFile ("VST3 Presets"));
+    addFolder (out, juce::File (juce::SystemStats::getEnvironmentVariable ("ProgramData", "C:\\ProgramData")).getChildFile ("VST3 Presets"));
+   #else
+    addFolder (out, home.getChildFile (".vst3/presets"));
+   #endif
+    addFolder (out, docs.getChildFile ("VST3 Presets"));
+    addFolder (out, docs.getChildFile ("FabFilter/Presets"));
+    addFolder (out, docs.getChildFile ("Image-Line/FL Studio/Presets/Plugin presets/Effects"));   // FL Studio
+    addFolder (out, docs.getChildFile ("Studio One/Presets"));                                   // Studio One
+    addFolder (out, docs.getChildFile ("Studio One 6/Presets"));
+    addFolder (out, docs.getChildFile ("Studio One 7/Presets"));
+    return out;
+}
+
+void attachPresets (std::vector<PluginInfo>& plugins, const juce::Array<juce::File>& roots, const std::atomic<bool>* cancel)
+{
+    constexpr int kMaxFilesSeen = 40000;
+    constexpr size_t kMaxPerPlugin = 300;
+
+    struct Key { std::string name, vendor; };
+    std::vector<Key> keys;
+    for (const auto& p : plugins)
+        keys.push_back ({ squash (p.name), squash (p.vendor) });
+
+    int seen = 0;
+    for (const auto& root : roots)
+    {
+        for (const auto& entry : juce::RangedDirectoryIterator (root, true, "*", juce::File::findFiles | juce::File::ignoreHiddenFiles))
+        {
+            if (cancelled (cancel) || ++seen > kMaxFilesSeen)
+                return;
+            const auto f = entry.getFile();
+            if (! f.hasFileExtension ("aupreset;vstpreset;ffp;fxp;fxb;fst;preset;pst;cst"))
+                continue;
+
+            // Look at the folders between the root and the file, nearest first.
+            juce::StringArray folders;
+            for (auto d = f.getParentDirectory(); d != root && d.isAChildOf (root) && folders.size() < 4; d = d.getParentDirectory())
+                folders.add (d.getFileName());
+
+            const auto presetName = f.getFileNameWithoutExtension().toStdString();
+            for (size_t i = 0; i < plugins.size(); ++i)
+            {
+                bool fits = false;
+                for (const auto& folder : folders)
+                    if (folderFits (squash (folder), keys[i].name, keys[i].vendor))
+                    {
+                        fits = true;
+                        break;
+                    }
+                auto& list = plugins[i].presets;
+                if (fits && list.size() < kMaxPerPlugin
+                    && std::find (list.begin(), list.end(), presetName) == list.end())
+                    list.push_back (presetName);
+            }
+        }
+    }
 }
 
 std::vector<PluginInfo> describeVst3 (const juce::File& bundle)
@@ -258,6 +350,13 @@ std::vector<PluginInfo> scanInstalledPlugins (const ScanOptions& options, const 
 
     for (auto& p : out)
         tagPlugin (p);
+
+    if (options.presets)
+    {
+        auto roots = defaultPresetFolders();
+        roots.addArray (options.extraPresetFolders);
+        attachPresets (out, roots, cancel);
+    }
     return out;
 }
 

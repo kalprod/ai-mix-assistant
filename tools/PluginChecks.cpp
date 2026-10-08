@@ -202,6 +202,21 @@ std::vector<aimix::PluginInfo> demoLibrary()
         aimix::tagPlugin (p);
         out.push_back (std::move (p));
     }
+
+    // Saved preset files, as the scanner would find them.
+    auto presets = [&out] (const char* name, std::vector<std::string> list)
+    {
+        for (auto& p : out)
+            if (p.name == name)
+                p.presets = list;
+    };
+    presets ("Pro-Q 3", { "Vocal Clean-Up", "Hip-Hop Vocal Air", "Kick Tighten" });
+    presets ("UADx LA-2A Gray", { "Lead Vocal Smooth", "Bass Steady" });
+    presets ("UADx 1176 Rev E", { "Rap Vocal Aggressive", "Drum Smash" });
+    presets ("UADx SSL G Bus Compressor", { "Hip-Hop Mix Glue", "Gentle Glue" });
+    presets ("Pro-L 2", { "Modern Loud Master", "Transparent" });
+    presets ("UADx Pultec EQP-1A", { "Vintage Air" });
+    presets ("Pro-C 2", { "Vocal Leveler" });
     return out;
 }
 
@@ -256,6 +271,33 @@ void checkPluginScanner()
     const auto* eq = findByName ("Pultec Style EQ");
     check (eq != nullptr && eq->family == "Pultec" && eq->version == "2.0", "VST3 scan falls back to Info.plist");
 
+    // Saved presets sit in folders named after the plugin; a bare vendor folder fits nothing.
+    {
+        const auto presetRoot = root.getChildFile ("Presets");
+        auto add = [&presetRoot] (const char* rel) { auto f = presetRoot.getChildFile (rel); f.create(); };
+        add ("Analog Co/Warm Bus Comp/Hip-Hop Glue.vstpreset");
+        add ("Analog Co/Warm Bus Comp/Factory/Gentle.vstpreset");
+        add ("Analog Co/Loose File.vstpreset");
+        add ("Pultec Style EQ/Air Lift.aupreset");
+        add ("Pultec Style EQ/readme.txt");
+        auto withPresets = found;
+        attachPresets (withPresets, { presetRoot });
+        auto presetsOf = [&withPresets] (const char* name)
+        {
+            for (const auto& p : withPresets)
+                if (p.name == name)
+                    return p.presets;
+            return std::vector<std::string> {};
+        };
+        const auto compPresets = presetsOf ("Warm Bus Comp");
+        check (compPresets.size() == 2
+                   && std::find (compPresets.begin(), compPresets.end(), "Hip-Hop Glue") != compPresets.end()
+                   && std::find (compPresets.begin(), compPresets.end(), "Gentle") != compPresets.end(),
+               "preset scan finds a plugin's saved presets, including subfolders");
+        check (presetsOf ("Pultec Style EQ") == std::vector<std::string> { "Air Lift" },
+               "preset scan ignores other files and presets in a vendor folder");
+    }
+
     // Save, load, and keep the user's own changes across a rescan.
     auto lib = demoLibrary();
     lib[0].favourite = true;
@@ -267,7 +309,8 @@ void checkPluginScanner()
     bool same = loaded.size() == lib.size() && when == 1234;
     for (size_t i = 0; same && i < lib.size(); ++i)
         same = loaded[i].id == lib[i].id && loaded[i].functions == lib[i].functions && loaded[i].family == lib[i].family
-            && loaded[i].character == lib[i].character && loaded[i].favourite == lib[i].favourite;
+            && loaded[i].character == lib[i].character && loaded[i].favourite == lib[i].favourite
+            && loaded[i].presets == lib[i].presets;
     check (same, "plugin library saves and loads as JSON");
 
     auto fresh = demoLibrary();
@@ -347,6 +390,34 @@ std::shared_ptr<const aimix::MixReport> checkMultiInstance (const juce::File& ou
         auto* ed = static_cast<AIMixEditor*> (editor.get());
         ed->setLibraryOverride (demoLibrary());
         ed->refresh();
+
+        // No genre yet: "What are you mixing?" comes first.
+        check (ed->getStylePicker().isVisible(), "the genre picker shows before the analysis when no genre is chosen");
+        ed->getStylePicker().setStyle ({ aimix::Genre::HipHop, aimix::Era::Modern });
+        savePng (*editor, outDir.getChildFile ("ui_style_picker.png"));
+        ed->getStylePicker().onChosen (ed->getStylePicker().getStyle());
+        check (! ed->getStylePicker().isVisible(), "choosing a genre closes the picker");
+
+        // Picked on a track: the Master Engine adopts it and every track follows.
+        master.syncModeNow();
+        bool shared = false;
+        for (int i = 0; i < 100 && ! shared; ++i)
+        {
+            juce::Thread::sleep (20);
+            shared = synth.getEffectiveStyle() == aimix::MixStyle { aimix::Genre::HipHop, aimix::Era::Modern };
+        }
+        check (master.getOwnStyle().genre == aimix::Genre::HipHop && shared,
+               "a genre picked on one track is used by the Master Engine and every other track");
+        auto styled = master.getLatestReport();
+        for (int i = 0; i < 50 && (styled == nullptr || ! styled->style.isSet()); ++i)
+        {
+            juce::Thread::sleep (20);
+            styled = master.getLatestReport();
+        }
+        check (styled != nullptr && styled->style.genre == aimix::Genre::HipHop, "the engine's rules follow the chosen genre");
+
+        for (int i = 0; i < 15; ++i)
+            ed->refresh();
         savePng (*editor, outDir.getChildFile ("ui_listener.png"));
         const auto& chain = ed->getListenerView().getChainPanel().getRecommendation();
         check (chain.role == aimix::TrackRole::Kick && chain.missingCount == 0 && chain.analogCount >= 2,
@@ -393,6 +464,7 @@ void renderMasterSnapshot (const juce::File& outDir)
     AIMixProcessor p;
     setParam (p, "mode", 1.0f);
     p.syncModeNow();
+    p.chooseStyle ({ aimix::Genre::HipHop, aimix::Era::Modern });
     std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
     auto* ed = static_cast<AIMixEditor*> (editor.get());
     ed->setReportOverride (report);
@@ -463,6 +535,19 @@ void renderMasterSnapshot (const juce::File& outDir)
         check (chain.master && chain.slots.size() == 4 && chain.slots[0].pickFamily == "SSL"
                    && chain.slots[3].pickName.find ("Pro-L") != std::string::npos,
                "the master window suggests bus comp, program EQ, tape and a clean limiter");
+        check (chain.slots[0].options.size() == 3 && ! chain.slots[0].options[1].note.empty()
+                   && chain.slots[0].options[0].preset.name == "Hip-Hop Mix Glue"
+                   && chain.slots[0].options[0].preset.match == aimix::PresetMatch::Exact,
+               "the mix bus comp shows option 1 with its Hip-Hop preset, plus options 2 and 3 with notes");
+
+        // Vintage: warmer picks, and the tall view of every option.
+        p.chooseStyle ({ aimix::Genre::RnB, aimix::Era::Vintage });
+        editor->setSize (1400, 1500);
+        for (int i = 0; i < 15; ++i)
+            ed->refresh();
+        savePng (*editor, outDir.getChildFile ("ui_master_chain_vintage.png"));
+        editor->setSize (1400, 900);
+        p.chooseStyle ({ aimix::Genre::HipHop, aimix::Era::Modern });
         ed->getMasterView().showChain (false);
     }
 

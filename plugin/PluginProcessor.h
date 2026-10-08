@@ -77,6 +77,13 @@ public:
     juce::StringArray getChainAdded() const { return chainAdded; }
     void setChainAdded (const juce::StringArray& added) { chainAdded = added; }
 
+    // The genre/era the mix is judged against. A Listener follows the Master
+    // Engine's choice when one is running; picking on any window sets it for
+    // the whole session.
+    aimix::MixStyle getOwnStyle() const noexcept;
+    aimix::MixStyle getEffectiveStyle() const noexcept;
+    void chooseStyle (aimix::MixStyle style);
+
     // Make the mode/engine state follow the parameters immediately (normally
     // done by a 4 Hz timer). Used by the editor and by the headless checks.
     void syncModeNow() { timerCallback(); }
@@ -96,6 +103,9 @@ private:
 
     std::atomic<float>* modeParam = nullptr;
     std::atomic<float>* roleParam = nullptr;
+    std::atomic<float>* genreParam = nullptr;
+    std::atomic<float>* eraParam = nullptr;
+    uint32_t lastStyleRequest = 0;
 
     juce::String trackNameOverride, hostTrackName;
     juce::StringArray chainAdded;

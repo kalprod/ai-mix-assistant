@@ -48,7 +48,7 @@ std::vector<PluginInfo> scanAudioUnits (const std::atomic<bool>* cancel)
                 vendor = name.upToFirstOccurrenceOf (":", false, false).trim();
                 name = name.fromFirstOccurrenceOf (":", false, false).trim();
             }
-            if (name.isEmpty() || name.containsIgnoreCase ("AI Mix Assistant"))
+            if (name.isEmpty() || name.containsIgnoreCase ("AI Mix Assistant") || name.containsIgnoreCase ("K MASTER"))
                 continue;
 
             PluginInfo p;

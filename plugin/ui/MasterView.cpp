@@ -13,7 +13,7 @@ void SummaryBar::paint (juce::Graphics& g)
         const float diff = m.integratedLufs - targetLufs;
         tiles.push_back ({ "INTEGRATED", formatLufs (m.integratedLufs), "LUFS",
                            m.integratedLufs <= -70.0f ? colours::screenText : (std::abs (diff) <= 3.0f ? colours::meterGreen : colours::meterAmber) });
-        tiles.push_back ({ "TARGET", juce::String (targetLufs, 0), "LUFS", colours::screenDim });
+        tiles.push_back ({ "TARGET", juce::String (targetLufs, std::abs (targetLufs - std::round (targetLufs)) > 0.01f ? 1 : 0), "LUFS", colours::screenDim });
         tiles.push_back ({ "SHORT-TERM", formatLufs (m.shortTermLufs), "LUFS", colours::screenText });
         tiles.push_back ({ "PEAK", formatDb (m.maxPeakDb()), "dBFS", m.maxPeakDb() >= -1.0f ? colours::meterRed : colours::screenText });
         tiles.push_back ({ "CORRELATION", juce::String (m.correlation, 2), {}, m.correlation < 0.0f ? colours::meterRed : (m.correlation < 0.3f ? colours::meterAmber : colours::screenText) });
@@ -123,7 +123,7 @@ void MasterView::paint (juce::Graphics& g)
             drawWrapped (g, "Listening to the whole mix", font (18.0f, true), colours::text, t.removeFromTop (28.0f));
             drawWrapped (g, "From the mix bus alone you get loudness, headroom, stereo and overall tone advice.\n\n"
                             "To find out which instrument causes a problem, and which tracks clash with each other, "
-                            "also put AI Mix Assistant on each track and leave its Mode on Listener. It detects "
+                            "also put K MASTER on each track and leave its Mode on Listener. It detects "
                             "what each track is by itself.",
                          font (15.0f), colours::textDim, t);
         }

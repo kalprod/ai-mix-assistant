@@ -34,7 +34,8 @@ add_library (aimix_core STATIC
     core/src/MixEngine.cpp
     core/src/SyntheticSession.cpp
     core/src/PluginLibrary.cpp
-    core/src/ChainRecommender.cpp)
+    core/src/ChainRecommender.cpp
+    core/src/MixStyle.cpp)
 target_include_directories (aimix_core PUBLIC core/include)
 find_package (Threads REQUIRED)
 target_link_libraries (aimix_core PUBLIC Threads::Threads)

@@ -699,7 +699,7 @@ void mixToneRules (const MixSnapshot& mix, const RuleConfig& cfg, std::vector<Su
             s.detail = fmt ("The mix is %.1f dB above its own tonal balance at %s. %s", excess, fs.c_str(), r.why);
             s.steps = {
                 fmt ("On the mix bus, add a bell at %s, Q %.1f, cutting %.1f dB.", fs.c_str(), bellQ, -cut),
-                "Better still, find the instrument causing it: solo tracks while watching this frequency, or add AI Mix Assistant to each track and it will name it.",
+                "Better still, find the instrument causing it: solo tracks while watching this frequency, or add K MASTER to each track and it will name it.",
                 "Cut on that track instead and remove the mix-bus EQ.",
             };
             s.action = { ActionType::EqBell, m.trackId, cut, f, bellQ };

@@ -12,6 +12,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "role", 1 }, "Track Role", AIMixProcessor::roleNames(), 0,
         juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+    juce::StringArray genres, eras;
+    for (int g = 0; g < aimix::kNumGenres; ++g)
+        genres.add (aimix::genreName ((aimix::Genre) g));
+    for (int e = 0; e < aimix::kNumEras; ++e)
+        eras.add (aimix::eraName ((aimix::Era) e));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "genre", 1 }, "Genre", genres, 0,
+        juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "era", 1 }, "Style", eras, 0,
+        juce::AudioParameterChoiceAttributes().withAutomatable (false)));
     return layout;
 }
 }
@@ -34,6 +45,8 @@ AIMixProcessor::AIMixProcessor()
 {
     modeParam = parameters.getRawParameterValue ("mode");
     roleParam = parameters.getRawParameterValue ("role");
+    genreParam = parameters.getRawParameterValue ("genre");
+    eraParam = parameters.getRawParameterValue ("era");
 
     // Shared memory first so Listeners in sandboxed/out-of-process hosts can
     // still reach the Master; falls back to an in-process bus.
@@ -194,6 +207,46 @@ aimix::TrackRole AIMixProcessor::getEffectiveRole() const
     return (detected & aimix::kDetectedRoleValid) != 0 ? (aimix::TrackRole) (detected & 0xffu) : aimix::TrackRole::Unknown;
 }
 
+aimix::MixStyle AIMixProcessor::getOwnStyle() const noexcept
+{
+    aimix::MixStyle s;
+    s.genre = (aimix::Genre) juce::jlimit (0, aimix::kNumGenres - 1, juce::roundToInt (genreParam->load()));
+    s.era = (aimix::Era) juce::jlimit (0, aimix::kNumEras - 1, juce::roundToInt (eraParam->load()));
+    return s;
+}
+
+aimix::MixStyle AIMixProcessor::getEffectiveStyle() const noexcept
+{
+    if (getMode() == Mode::Listener && isMasterEngineOnline())
+    {
+        const auto shared = aimix::MixStyle::unpack (bus->layout().header.mixStyle.load (std::memory_order_relaxed));
+        if (shared.isSet())
+            return shared;
+    }
+    return getOwnStyle();
+}
+
+void AIMixProcessor::chooseStyle (aimix::MixStyle style)
+{
+    auto set = [this] (const char* id, int index)
+    {
+        if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter (id)))
+            p->setValueNotifyingHost (p->convertTo0to1 ((float) index));
+    };
+    set ("genre", (int) style.genre);
+    set ("era", (int) style.era);
+
+    // Ask the Master Engine (if any) to use it for the whole session.
+    if (getMode() == Mode::Listener && bus != nullptr)
+    {
+        auto& req = bus->layout().header.requestedStyle;
+        const auto old = req.load();
+        req.store ((((old >> 16) + 1) << 16) | (style.pack() & 0xffffu));
+    }
+    if (engine != nullptr)
+        engine->setStyle (style);
+}
+
 void AIMixProcessor::setTrackNameOverride (const juce::String& name)
 {
     trackNameOverride = name.trim();
@@ -215,10 +268,26 @@ void AIMixProcessor::timerCallback()
     {
         engine = std::make_unique<aimix::MixEngine> (bus);
         engine->start();
+        // A style picked on a track before this Master existed is adopted;
+        // an older one is not when this Master already has its own.
+        lastStyleRequest = getOwnStyle().isSet() ? bus->layout().header.requestedStyle.load() : 0u;
     }
     else if (! wantEngine && engine != nullptr)
     {
         engine.reset();
+    }
+
+    if (engine != nullptr)
+    {
+        const auto request = bus->layout().header.requestedStyle.load();
+        if (request != lastStyleRequest)
+        {
+            lastStyleRequest = request;
+            const auto picked = aimix::MixStyle::unpack (request & 0xffffu);
+            if (picked.isSet() && picked != getOwnStyle())
+                chooseStyle (picked);
+        }
+        engine->setStyle (getOwnStyle());
     }
     pushIdentityToAnalyzer();
 }

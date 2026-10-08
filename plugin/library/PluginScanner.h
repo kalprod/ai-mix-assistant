@@ -17,19 +17,29 @@ namespace aimix::library
 //                moduleinfo.json, else its Info.plist, else the file name
 //   VST          standard folders; name from the file name
 //
-// Instruments and AI Mix Assistant itself are skipped.
+// Instruments and K MASTER itself are skipped.
 struct ScanOptions
 {
     bool audioUnits = true;
     bool vst3 = true;
     bool vst2 = true;
-    juce::Array<juce::File> extraVst3Folders;   // for tests
+    bool presets = true;
+    juce::Array<juce::File> extraVst3Folders;     // for tests
+    juce::Array<juce::File> extraPresetFolders;   // for tests
 };
 
 std::vector<PluginInfo> scanInstalledPlugins (const ScanOptions& options, const std::atomic<bool>* cancel = nullptr);
 
 juce::Array<juce::File> defaultVst3Folders();
 juce::Array<juce::File> defaultVst2Folders();
+
+// Saved preset files (.aupreset, .vstpreset, FabFilter .ffp, FL .fst, Studio
+// One .preset, Logic .pst...) live in folders named after the plugin. Fills
+// PluginInfo::presets with their names. Factory presets built into a plugin
+// can't be seen without loading it, so those are not listed.
+juce::Array<juce::File> defaultPresetFolders();
+void attachPresets (std::vector<PluginInfo>& plugins, const juce::Array<juce::File>& roots,
+                    const std::atomic<bool>* cancel = nullptr);
 
 // One VST3 bundle or file. Public for tests.
 std::vector<PluginInfo> describeVst3 (const juce::File& bundle);

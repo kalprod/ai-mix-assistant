@@ -10,6 +10,7 @@
 // points come from the track's measurements.
 
 #include "aimix/AnalysisPayload.h"
+#include "aimix/MixStyle.h"
 #include "aimix/PluginLibrary.h"
 
 #include <string>
@@ -29,6 +30,7 @@ struct ChainContext
     float levelSwingLu = 0.0f;      // spread of momentary loudness; 0 = unknown
     float sideToMidDb = -100.0f;
     std::string preferredFormat;    // "AU" or "VST3": breaks ties between copies of one plugin
+    MixStyle style;                 // genre and era the mix is aimed at
 };
 
 ChainContext chainContextFor (const TrackView& t, bool master);
@@ -37,6 +39,33 @@ struct KnobTip
 {
     std::string knob;      // "Drive / Input", "Gain reduction", "Tone / Colour", "Mix / Blend"
     std::string setting;   // "3-5 dB on the loudest words"
+};
+
+enum class PresetMatch : uint8_t
+{
+    Exact,      // a saved preset made for this role and style
+    Closest,    // the nearest saved preset; tweak the knobs to finish
+    NotFound,   // no suitable saved preset: start from the default
+};
+
+struct PresetAdvice
+{
+    std::string name;               // the preset to load ("" for NotFound)
+    PresetMatch match = PresetMatch::NotFound;
+    std::string text;               // one or two lines for the user
+};
+
+// One plugin choice for a slot. Option 1 is the best pick; options 2 and 3
+// are different-sounding alternatives from the user's own plugins.
+struct ChainOption
+{
+    int pick = -1;                  // index into the library
+    std::string name;               // display name
+    std::string character;          // "analog", "analog_inspired", "digital"
+    std::string family;
+    PresetAdvice preset;
+    std::string note;               // options 2 and 3: how it differs from option 1
+    int score = 0;
 };
 
 struct ChainSlot
@@ -50,11 +79,11 @@ struct ChainSlot
     std::string pickName;          // "Pultec EQP-1A (UADx)"
     std::string pickCharacter;     // "analog", "analog_inspired", "digital"
     std::string pickFamily;
-    std::vector<int> alternatives; // next best, at most 2
     int score = 0;
+    std::vector<ChainOption> options;   // [0] = the pick above, then up to 2 alternatives
 
-    std::string preset;            // which preset to start from
-    std::vector<KnobTip> knobs;    // 2-4 quick-tweak starting points
+    std::string preset;            // option 1's preset advice, as text
+    std::vector<KnobTip> knobs;    // 2-4 quick-tweak starting points (the target sound)
 };
 
 struct ChainRecommendation
@@ -67,7 +96,8 @@ struct ChainRecommendation
 };
 
 // Scoring for each slot (a plugin must do the slot's job to be considered):
-//   analog model +40, analog-inspired +20 (clean-up EQ and the master
+//   analog model +40, analog-inspired +20 (30/15 for modern styles,
+//   50/25 for vintage) (clean-up EQ and the master
 //   limiter reverse this: clean digital +40);
 //   preferred hardware family +25 / +20 / +15 by rank; matching type
 //   (opto, FET, program EQ...) +10; tag confidence up to +5;
@@ -77,5 +107,11 @@ struct ChainRecommendation
 ChainRecommendation recommendChain (const std::vector<PluginInfo>& library, const ChainContext& ctx);
 
 std::string displayName (const PluginInfo& p);   // "Pultec EQP-1A (UADx, AU)"
+
+// Picks the saved preset of `p` that best fits the slot, role and style.
+PresetAdvice choosePreset (const PluginInfo& p, const ChainContext& ctx, const std::string& slotId);
+
+// One line on how `option` sounds next to `primary` in this slot.
+std::string differenceNote (const PluginInfo& primary, const PluginInfo& option, const std::string& slotId);
 
 } // namespace aimix

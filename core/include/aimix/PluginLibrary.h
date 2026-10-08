@@ -65,6 +65,9 @@ struct PluginInfo
     float tagConfidence = 0.3f;
     bool favourite = false;
 
+    // Preset names saved on disk for this plugin (user and some factory presets).
+    std::vector<std::string> presets;
+
     bool does (PluginFunction f) const noexcept { return (functions & f) != 0; }
 };
 

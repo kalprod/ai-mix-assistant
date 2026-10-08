@@ -11,6 +11,7 @@
 #include "DelayEstimator.h"
 #include "RoleClassifier.h"
 #include "RuleEngine.h"
+#include "MixStyle.h"
 #include "SharedBus.h"
 
 #include <array>
@@ -46,6 +47,7 @@ struct MixReport
     std::vector<PairView> pairs;         // sorted by masking score, highest first
     std::vector<Suggestion> suggestions; // sorted by severity, then confidence
     float lastTickMs = 0.0f;             // engine CPU time per tick
+    MixStyle style;                      // the genre/era the rules are tuned for
 };
 
 class MixEngine
@@ -64,6 +66,10 @@ public:
     void dismiss (const std::string& key);
 
     bool ownsBus() const noexcept { return isMaster; }
+
+    // The genre/era to judge the mix against. Retunes the rules on the next
+    // tick and is shared with every Listener over the bus. Thread-safe.
+    void setStyle (MixStyle style) noexcept { wantedStyle.store (style.pack()); }
 
 private:
     struct FrameHistory
@@ -115,7 +121,10 @@ private:
     std::array<TrackState, kMaxBusSlots> states;
     std::map<uint64_t, DelayTrack> delays;
     DelayEstimator delayEstimator { kSnapshotSize };
+    RuleConfig baseConfig;
     RuleEngine rules;
+    std::atomic<uint32_t> wantedStyle { 0 };
+    uint32_t appliedStyle = 0;
 
     mutable std::mutex reportLock;
     std::shared_ptr<const MixReport> latest;

@@ -33,6 +33,7 @@ public:
     void showChain (bool shouldShow);
     bool isShowingChain() const noexcept { return chainButton.getToggleState(); }
     ChainPanel& getChainPanel() noexcept { return chain; }
+    void setTargetLufs (float t) { summary.setTargetLufs (t); summary.repaint(); }
 
     void paint (juce::Graphics&) override;
     void resized() override;

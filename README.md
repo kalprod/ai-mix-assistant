@@ -1,4 +1,6 @@
-# AI Mix Assistant (JUCE · VST3 / AU / AAX)
+# K MASTER (JUCE · VST3 / AU / AAX)
+
+Formerly "AI Mix Assistant". The plugin IDs are unchanged, so sessions saved with the old name still open it.
 
 One plugin binary, two modes:
 
@@ -42,9 +44,13 @@ Use `-DAIMIX_JUCE_PATH=/path/to/JUCE` to build against a local JUCE checkout.
 
 ## Using it
 
-1. Insert **AI Mix Assistant** on each track, ideally last in the chain. Leave **Role** on **Auto**: after a few seconds of playback the Master Engine works out whether the track is a kick, snare, drums, bass, vocal or another instrument, and the Listener shows what it detected. Pick a role yourself if the guess is wrong; roles decide which track yields when two of them clash.
+1. Insert **K MASTER** on each track, ideally last in the chain. Leave **Role** on **Auto**: after a few seconds of playback the Master Engine works out whether the track is a kick, snare, drums, bass, vocal or another instrument, and the Listener shows what it detected. Pick a role yourself if the guess is wrong; roles decide which track yields when two of them clash.
 2. Insert one more instance on the mix bus and set **Mode** to **Master Engine**.
 3. Play the session. A card appears once a problem has been measured for about a quarter of a second, and stays until it is fixed: when the problem stops being measured the card turns green ("looks fixed") and disappears after about 3 seconds of playback without it. Stopping playback freezes the cards rather than clearing them. Click a strip to filter cards to that track; **Dismiss** hides a card for the session. **Enlarge** gives the advice the whole window (**Shrink** brings the channel rack back).
+
+**Genre and style first.** Before the analysis starts, the window asks *What are you mixing?*: a genre (Hip-Hop, R&B, Pop, Rock, Electronic, Other) and a style (Modern, Old School, Vintage). That choice sets the loudness target, how much compression is too much, how bright or warm the tone should be, how wet a vocal may be, and how strongly analog models are preferred. Pick it on any track or on the Master Engine and the whole session uses it; change it any time from the button in the header.
+
+**Suggested chain: Option 1, 2 and 3.** For every slot the chain shows one best pick (Option 1) from your installed plugins with the preset to load: **PRESET FOUND** when you have a saved preset made for this kind of track and style, **CLOSEST PRESET** with the knob changes that get it the rest of the way, or **NO PRESET FILE** with what to look for in its preset menu. Below it, Options 2 and 3 are different-sounding plugins you own, each with its preset and a note on how it differs (warmer, cleaner, faster, smoother...). Saved presets are read from the standard folders of Logic, FL Studio, Studio One, Audio Units, VST3 and FabFilter; presets built into a plugin can't be seen without loading it.
 
 The advice is grouped into the order to mix in, so you can work top to bottom:
 
@@ -55,7 +61,7 @@ The advice is grouped into the order to mix in, so you can work top to bottom:
 5. **Depth**: a vocal drowned in reverb on its insert, plus general reverb and delay tips (the plugin can't measure reverb itself).
 6. **Final tip**: trust your ears.
 
-Steps 3 and 4 need AI Mix Assistant on the individual tracks; the mix bus alone covers steps 1, 2 and mono/width.
+Steps 3 and 4 need K MASTER on the individual tracks; the mix bus alone covers steps 1, 2 and mono/width.
 
 **Only one instance, on the mix bus?** That works too and gives loudness, headroom, stereo/mono and overall tone (muddy, harsh) advice for the whole mix, with fixes on the mix bus. Advice about individual instruments, and which tracks clash, needs a Listener on those tracks.
 

@@ -28,6 +28,69 @@ juce::String characterBadge (const std::string& c)
 }
 
 float leftColumnWidth (float width) { return juce::jlimit (180.0f, 320.0f, width * 0.30f); }
+float rightColumnWidth (float width) { return width - 28.0f - leftColumnWidth (width); }
+
+constexpr float kCaptionH = 16.0f;
+constexpr float kWellH = 40.0f;
+constexpr float kPresetBadgeW = 112.0f;
+
+juce::String presetBadge (PresetMatch m)
+{
+    switch (m)
+    {
+        case PresetMatch::Exact:    return "PRESET FOUND";
+        case PresetMatch::Closest:  return "CLOSEST PRESET";
+        case PresetMatch::NotFound: return "NO PRESET FILE";
+    }
+    return {};
+}
+
+juce::Colour presetColour (PresetMatch m)
+{
+    switch (m)
+    {
+        case PresetMatch::Exact:    return colours::meterGreen.darker (0.15f);
+        case PresetMatch::Closest:  return colours::amber;
+        case PresetMatch::NotFound: return colours::outline;
+    }
+    return colours::outline;
+}
+
+juce::String presetLine (const PresetAdvice& p)
+{
+    return juce::String (p.text.empty() ? std::string ("Start from its default setting.") : p.text);
+}
+
+// Badge + wrapped text, used for option 1.
+float presetHeight (const PresetAdvice& p, float w)
+{
+    return juce::jmax (20.0f, textHeight (presetLine (p), font (13.5f), w - kPresetBadgeW - 10.0f));
+}
+
+// Options 2 and 3: a small card with the plugin, its preset and how it differs.
+float alternativeHeight (const ChainOption& o, float w)
+{
+    const float tw = w - 24.0f;
+    return 10.0f + 20.0f + 4.0f + textHeight ("Preset: " + presetLine (o.preset), font (12.5f), tw)
+         + 3.0f + textHeight (juce::String (o.note), font (12.5f, true), tw) + 10.0f;
+}
+
+void drawCharacterBadge (juce::Graphics& g, const std::string& character, juce::Rectangle<float> area, bool onScreen)
+{
+    const bool analog = character == "analog";
+    const bool inspired = character == "analog_inspired";
+    g.setColour (analog ? colours::amber : inspired ? colours::amber.withAlpha (0.55f)
+                                         : (onScreen ? colours::screenLine : colours::outline.withAlpha (0.5f)));
+    g.fillRoundedRectangle (area, 4.0f);
+    g.setColour (analog || inspired ? colours::amberText : (onScreen ? colours::screenText : colours::textDim));
+    g.setFont (font (area.getHeight() > 18.0f ? 11.0f : 10.0f, true));
+    g.drawText (characterBadge (character), area, juce::Justification::centred);
+}
+
+float badgeWidth (const std::string& character, float fontH)
+{
+    return juce::GlyphArrangement::getStringWidth (font (fontH, true), characterBadge (character)) + 16.0f;
+}
 }
 
 ChainPanel::ChainPanel()
@@ -73,18 +136,23 @@ void ChainPanel::recompute()
         {
             const auto& x = a.slots[i];
             const auto& y = b.slots[i];
-            if (x.pickName != y.pickName || x.alternatives != y.alternatives || x.preset != y.preset
+            if (x.pickName != y.pickName || x.preset != y.preset || x.options.size() != y.options.size()
                 || x.knobs.size() != y.knobs.size())
                 return false;
+            for (size_t o = 0; o < x.options.size(); ++o)
+                if (x.options[o].name != y.options[o].name || x.options[o].preset.text != y.options[o].preset.text
+                    || x.options[o].note != y.options[o].note)
+                    return false;
             for (size_t k = 0; k < x.knobs.size(); ++k)
                 if (x.knobs[k].setting != y.knobs[k].setting)
                     return false;
         }
         return true;
     };
-    if (same (next, rec) && ! rec.slots.empty())
+    if (same (next, rec) && ! rec.slots.empty() && styleShown == context.style)
         return;
     rec = std::move (next);
+    styleShown = context.style;
     resized();
     repaint();
     rows.repaint();
@@ -92,9 +160,11 @@ void ChainPanel::recompute()
 
 juce::String ChainPanel::headline() const
 {
-    if (rec.master)
-        return "Suggested mix bus chain";
-    return "Suggested chain for " + roleText (rec.role).toLowerCase();
+    juce::String h = rec.master ? juce::String ("Suggested mix bus chain")
+                                : "Suggested chain for " + roleText (rec.role).toLowerCase();
+    if (context.style.isSet())
+        h << "  |  " << juce::String (styleName (context.style));
+    return h;
 }
 
 void ChainPanel::paint (juce::Graphics& g)
@@ -142,13 +212,13 @@ ChainPanel::Daw ChainPanel::dawFor (const juce::String& host)
 {
     Daw d;
     if (host.containsIgnoreCase ("FL Studio") || host.containsIgnoreCase ("Fruity"))
-        d = { "Mixer insert slot", "In the Mixer (F9), load these into this track's insert slots from the top down. Keep AI Mix Assistant in the last slot." };
+        d = { "Mixer insert slot", "In the Mixer (F9), load these into this track's insert slots from the top down. Keep K MASTER in the last slot." };
     else if (host.containsIgnoreCase ("Studio One"))
-        d = { "Insert", "Open this channel's Inserts in the Console (F3) and add these in order. Keep AI Mix Assistant at the bottom." };
+        d = { "Insert", "Open this channel's Inserts in the Console (F3) and add these in order. Keep K MASTER at the bottom." };
     else if (host.containsIgnoreCase ("Logic") || host.containsIgnoreCase ("GarageBand"))
-        d = { "Audio FX slot", "Click the empty Audio FX slots on this channel strip from the top down. Keep AI Mix Assistant in the lowest slot." };
+        d = { "Audio FX slot", "Click the empty Audio FX slots on this channel strip from the top down. Keep K MASTER in the lowest slot." };
     else
-        d = { "Insert slot", "Add these to this track's insert slots from the top down. Keep AI Mix Assistant last." };
+        d = { "Insert slot", "Add these to this track's insert slots from the top down. Keep K MASTER last." };
     return d;
 }
 
@@ -160,7 +230,7 @@ juce::Rectangle<float> ChainPanel::Rows::tickBox (size_t index) const
     {
         const float h = rowHeight (owner.rec.slots[i], width);
         if (i == index)
-            return { 14.0f + 5.0f, y + 14.0f + 44.0f, 20.0f, 20.0f };
+            return { 14.0f + 5.0f, y + 14.0f + 44.0f, 20.0f, 20.0f };   // under the number
         y += h + kRowGap;
     }
     return {};
@@ -201,13 +271,15 @@ float ChainPanel::Rows::rowHeight (const ChainSlot& s, float width) const
 {
     const float leftW = leftColumnWidth (width) - kNumberW;
     const float left = juce::jmax (70.0f, 42.0f + textHeight (juce::String (s.why), font (13.5f), leftW - 12.0f));
-    float right = 40.0f;   // plugin well
-    if (s.pick >= 0)
+    const float rightW = rightColumnWidth (width);
+    float right = kWellH;
+    if (s.pick >= 0 && ! s.options.empty())
     {
-        right += 8.0f + 18.0f;                // preset line
-        right += 8.0f + kChipH;               // knob chips
-        if (! s.alternatives.empty())
-            right += 6.0f + 16.0f;
+        right += kCaptionH + 4.0f;
+        right += 8.0f + presetHeight (s.options[0].preset, rightW);
+        right += 8.0f + kChipH;
+        for (size_t o = 1; o < s.options.size(); ++o)
+            right += 8.0f + alternativeHeight (s.options[o], rightW);
     }
     return juce::jmax (left, right) + 2.0f * 14.0f;
 }
@@ -222,7 +294,6 @@ int ChainPanel::Rows::heightFor (int width) const
 
 void ChainPanel::Rows::paint (juce::Graphics& g)
 {
-    const auto& lib = owner.library;
     const float width = (float) getWidth();
     float y = 0.0f;
     int number = 1;
@@ -301,41 +372,51 @@ void ChainPanel::Rows::paint (juce::Graphics& g)
 
         // Which plugin: a dark display with the name and an analog badge.
         auto right = inner;
-        auto well = right.removeFromTop (40.0f);
-        g.setColour (colours::screen);
-        g.fillRoundedRectangle (well, 7.0f);
-        auto wellText = well.reduced (14.0f, 0.0f);
-
-        if (s.pick < 0)
+        if (s.pick < 0 || s.options.empty())
         {
+            auto well = right.removeFromTop (kWellH);
+            g.setColour (colours::screen);
+            g.fillRoundedRectangle (well, 7.0f);
             g.setColour (colours::screenDim);
             g.setFont (font (14.0f));
-            g.drawText (missingText (s.id), wellText, juce::Justification::centredLeft, true);
+            g.drawText (missingText (s.id), well.reduced (14.0f, 0.0f), juce::Justification::centredLeft, true);
             continue;
         }
 
-        const auto badge = characterBadge (s.pickCharacter);
-        const auto badgeFont = font (11.0f, true);
-        const float bw = juce::GlyphArrangement::getStringWidth (badgeFont, badge) + 16.0f;
-        auto badgeArea = wellText.removeFromRight (bw).withSizeKeepingCentre (bw, 20.0f);
-        const bool analog = s.pickCharacter == "analog";
-        g.setColour (analog ? colours::amber : (s.pickCharacter == "analog_inspired" ? colours::amber.withAlpha (0.55f) : colours::screenLine));
-        g.fillRoundedRectangle (badgeArea, 4.0f);
-        g.setColour (analog || s.pickCharacter == "analog_inspired" ? colours::amberText : colours::screenText);
-        g.setFont (badgeFont);
-        g.drawText (badge, badgeArea, juce::Justification::centred);
+        const auto& best = s.options[0];
+        const float rightW = right.getWidth();
+        g.setColour (colours::accent);
+        g.setFont (font (11.0f, true));
+        g.drawText (owner.context.style.isSet() ? "OPTION 1  |  BEST PICK FOR " + juce::String (styleName (owner.context.style)).toUpperCase()
+                                                : juce::String ("OPTION 1  |  BEST PICK"),
+                    right.removeFromTop (kCaptionH), juce::Justification::centredLeft, true);
+        right.removeFromTop (4.0f);
 
-        juce::String name (s.pickName);
-        if (! s.pickFamily.empty() && ! juce::String (s.pickName).containsIgnoreCase (s.pickFamily))
-            name << "   " << juce::String (s.pickFamily) << " style";
+        auto well = right.removeFromTop (kWellH);
+        g.setColour (colours::screen);
+        g.fillRoundedRectangle (well, 7.0f);
+        auto wellText = well.reduced (14.0f, 0.0f);
+        const float bw = badgeWidth (best.character, 11.0f);
+        drawCharacterBadge (g, best.character, wellText.removeFromRight (bw).withSizeKeepingCentre (bw, 20.0f), true);
+
+        juce::String name (best.name);
+        if (! best.family.empty() && ! name.containsIgnoreCase (best.family))
+            name << "   " << juce::String (best.family) << " style";
         g.setColour (colours::screenText);
         g.setFont (monoFont (16.0f));
         g.drawFittedText (name, wellText.withTrimmedRight (10.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.85f);
 
+        // The preset: found, closest (with how to finish it), or none saved.
         right.removeFromTop (8.0f);
-        g.setColour (colours::textDim);
-        g.setFont (font (13.5f));
-        g.drawText ("Start from: " + juce::String (s.preset), right.removeFromTop (18.0f), juce::Justification::centredLeft, true);
+        auto presetArea = right.removeFromTop (presetHeight (best.preset, rightW));
+        auto pb = presetArea.removeFromLeft (kPresetBadgeW).removeFromTop (20.0f);
+        g.setColour (presetColour (best.preset.match));
+        g.fillRoundedRectangle (pb, 4.0f);
+        g.setColour (best.preset.match == PresetMatch::Exact ? juce::Colours::white
+                     : best.preset.match == PresetMatch::Closest ? colours::amberText : colours::textDim);
+        g.setFont (font (10.0f, true));
+        g.drawText (presetBadge (best.preset.match), pb, juce::Justification::centred);
+        drawWrapped (g, presetLine (best.preset), font (13.5f), colours::text, presetArea.withTrimmedLeft (10.0f).translated (0.0f, 1.0f));
 
         // Quick-tweak knobs: the 2-4 controls to set first.
         right.removeFromTop (8.0f);
@@ -359,16 +440,34 @@ void ChainPanel::Rows::paint (juce::Graphics& g)
             g.drawFittedText (juce::String (s.knobs[(size_t) k].setting), ct.toNearestInt(), juce::Justification::topLeft, 3, 1.0f);
         }
 
-        if (! s.alternatives.empty())
+        // Options 2 and 3 from the user's own plugins, and how they differ.
+        for (size_t o = 1; o < s.options.size(); ++o)
         {
-            right.removeFromTop (6.0f);
-            juce::StringArray alts;
-            for (int a : s.alternatives)
-                if (a >= 0 && (size_t) a < lib.size())
-                    alts.add (juce::String (displayName (lib[(size_t) a])));
-            g.setColour (colours::textFaint);
-            g.setFont (font (12.5f));
-            g.drawText ("Also good: " + alts.joinIntoString (",  "), right.removeFromTop (16.0f), juce::Justification::centredLeft, true);
+            const auto& alt = s.options[o];
+            right.removeFromTop (8.0f);
+            auto box = right.removeFromTop (alternativeHeight (alt, rightW));
+            g.setColour (colours::panel);
+            g.fillRoundedRectangle (box, 7.0f);
+            g.setColour (colours::outline);
+            g.drawRoundedRectangle (box.reduced (0.5f), 7.0f, 1.0f);
+
+            auto t = box.reduced (12.0f, 10.0f);
+            auto line = t.removeFromTop (20.0f);
+            g.setColour (colours::accent);
+            g.setFont (font (11.0f, true));
+            g.drawText ("OPTION " + juce::String ((int) o + 1), line.removeFromLeft (70.0f), juce::Justification::centredLeft);
+            const float abw = badgeWidth (alt.character, 10.0f);
+            drawCharacterBadge (g, alt.character, line.removeFromRight (abw).withSizeKeepingCentre (abw, 17.0f), false);
+            g.setColour (colours::text);
+            g.setFont (font (14.5f, true));
+            g.drawFittedText (juce::String (alt.name), line.withTrimmedRight (8.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.85f);
+
+            t.removeFromTop (4.0f);
+            const auto presetText = "Preset: " + presetLine (alt.preset);
+            const float ph = textHeight (presetText, font (12.5f), t.getWidth());
+            drawWrapped (g, presetText, font (12.5f), colours::textDim, t.removeFromTop (ph));
+            t.removeFromTop (3.0f);
+            drawWrapped (g, juce::String (alt.note), font (12.5f, true), colours::text, t);
         }
     }
 }

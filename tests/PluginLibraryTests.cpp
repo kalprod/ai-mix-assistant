@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 #include "aimix/ChainRecommender.h"
 #include "aimix/PluginLibrary.h"
+#include "aimix/RuleEngine.h"
 
 #include <algorithm>
 
@@ -174,7 +175,7 @@ TEST_CASE ("chains: each plugin is used once and missing slots are counted")
         if (s.pick >= 0)
         {
             ++picks;
-            CHECK (s.alternatives.empty());   // the VST3 copy of the same plugin is not an alternative
+            CHECK (s.options.size() == 1);   // the VST3 copy of the same plugin is not an alternative
         }
     CHECK (picks == 1);
     CHECK (r.missingCount == 2);   // clean-up EQ and character EQ
@@ -210,4 +211,112 @@ TEST_CASE ("plugin library: an EQ named 'Channel EQ' is not a channel strip")
     CHECK (! p.does (kFnCompressor));
     const auto strip = plug ("Vintage Channel Strip", "Someone");
     CHECK (strip.does (kFnChannelStrip) && strip.does (kFnCompressor) && strip.does (kFnEq));
+}
+
+TEST_CASE ("style: genre and era set loudness and dynamics targets")
+{
+    MixStyle hipHop { Genre::HipHop, Era::Modern };
+    MixStyle vintageRnb { Genre::RnB, Era::Vintage };
+    CHECK (MixStyle::unpack (hipHop.pack()) == hipHop);
+    CHECK (MixStyle::unpack (vintageRnb.pack()) == vintageRnb);
+    CHECK (! MixStyle::unpack (0).isSet());
+
+    const auto a = profileFor (hipHop);
+    const auto b = profileFor (vintageRnb);
+    CHECK (a.targetLufs > -10.5f && a.targetLufs < -8.0f);
+    CHECK (b.targetLufs < a.targetLufs);              // vintage keeps more dynamics
+    CHECK (b.mixSquashedCrestDb > a.mixSquashedCrestDb);
+    CHECK (b.analogBonus > a.analogBonus);
+
+    RuleConfig base;
+    CHECK_NEAR (applyStyle (base, {}).mixTargetLufs, base.mixTargetLufs, 0.001f);   // no genre: unchanged
+    CHECK_NEAR (applyStyle (base, hipHop).mixTargetLufs, a.targetLufs, 0.001f);
+}
+
+TEST_CASE ("chains: each slot has a main pick and two different-sounding alternatives with notes")
+{
+    const auto lib = studioLibrary();
+    ChainContext ctx;
+    ctx.role = TrackRole::Vocal;
+    ctx.style = { Genre::HipHop, Era::Modern };
+    const auto r = recommendChain (lib, ctx);
+    const auto* comp = slot (r, "compressor");
+    CHECK (comp != nullptr && comp->options.size() == 3);
+    if (comp != nullptr && comp->options.size() == 3)
+    {
+        CHECK (comp->options[0].pick == comp->pick);
+        CHECK (comp->options[0].note.empty());
+        CHECK (! comp->options[1].note.empty() && ! comp->options[2].note.empty());
+        // distinct: no two options share a hardware family
+        const auto& f0 = comp->options[0].family;
+        CHECK (f0.empty() || (comp->options[1].family != f0 && comp->options[2].family != f0));
+    }
+}
+
+TEST_CASE ("chains: R&B vocals lead with a smooth opto compressor, vintage makes tape part of the chain")
+{
+    const auto lib = studioLibrary();
+    ChainContext ctx;
+    ctx.role = TrackRole::Vocal;
+    ctx.style = { Genre::RnB, Era::Modern };
+    const auto r = recommendChain (lib, ctx);
+    const auto* comp = slot (r, "compressor");
+    CHECK (comp != nullptr && comp->pickFamily == "LA-2A");
+
+    ChainContext m;
+    m.master = true;
+    m.role = TrackRole::MasterBus;
+    m.style = { Genre::Pop, Era::Vintage };
+    const auto mr = recommendChain (lib, m);
+    const auto* tape = slot (mr, "tape");
+    CHECK (tape != nullptr && ! tape->optional);
+    const auto* lim = slot (mr, "limiter");
+    CHECK (lim != nullptr && lim->knobs.size() >= 2 && lim->knobs[1].setting.find ("LUFS") != std::string::npos);
+}
+
+TEST_CASE ("presets: exact match, closest match with tweaks, or none found")
+{
+    auto p = plug ("UADx 1176 Rev E", "Universal Audio");
+    ChainContext ctx;
+    ctx.role = TrackRole::Vocal;
+    ctx.style = { Genre::HipHop, Era::Modern };
+
+    p.presets = { "Drum Smash", "Rap Vocal Hip Hop", "Vocal Gentle", "Bass Grab" };
+    auto a = choosePreset (p, ctx, "compressor");
+    CHECK (a.match == PresetMatch::Exact && a.name == "Rap Vocal Hip Hop");
+
+    p.presets = { "Drum Smash", "Bass Grab", "Modern Punch" };
+    a = choosePreset (p, ctx, "compressor");
+    CHECK (a.match == PresetMatch::Closest && a.name == "Modern Punch");
+    CHECK (a.text.find ("Gain reduction") != std::string::npos);   // says how to tweak it
+
+    p.presets = { "Bass Grab" };
+    a = choosePreset (p, ctx, "compressor");
+    CHECK (a.match == PresetMatch::NotFound && a.name.empty());
+    CHECK (a.text.find ("Hip-Hop Vocal") != std::string::npos);    // tells them what to look for
+
+    p.presets.clear();
+    a = choosePreset (p, ctx, "compressor");
+    CHECK (a.match == PresetMatch::NotFound && a.text.find ("preset menu") != std::string::npos);
+
+    // A preset named for another genre or era is never called an exact match.
+    ChainContext bus;
+    bus.master = true;
+    bus.role = TrackRole::MasterBus;
+    bus.style = { Genre::RnB, Era::Vintage };
+    p.presets = { "Hip-Hop Mix Glue", "Modern Loud Master" };
+    a = choosePreset (p, bus, "bus_comp");
+    CHECK (a.match == PresetMatch::Closest);
+    p.presets = { "Hip-Hop Mix Glue", "Smooth Mix Bus" };
+    a = choosePreset (p, bus, "bus_comp");
+    CHECK (a.match == PresetMatch::Exact && a.name == "Smooth Mix Bus");
+}
+
+TEST_CASE ("chains: option notes say how alternatives differ")
+{
+    const auto la2a = plug ("UADx LA-2A Gray", "Universal Audio");
+    const auto fet = plug ("UADx 1176 Rev E", "Universal Audio");
+    const auto proc = plug ("Pro-C 2", "FabFilter");
+    CHECK (differenceNote (la2a, fet, "compressor").find ("punchier") != std::string::npos);
+    CHECK (differenceNote (la2a, proc, "compressor").find ("transparent") != std::string::npos);
 }

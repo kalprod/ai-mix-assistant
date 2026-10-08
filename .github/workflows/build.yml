@@ -58,11 +58,11 @@ jobs:
               cp -R "$REL/AU/"*.component "$OUT/"
               cp -R "$REL/Standalone/"*.app "$OUT/"
               printf '%s\n' \
-                "AI Mix Assistant for macOS (Apple Silicon + Intel)" "" \
-                "1. Copy 'AI Mix Assistant.component' to ~/Library/Audio/Plug-Ins/Components/  (Logic, GarageBand)" \
-                "2. Copy 'AI Mix Assistant.vst3' to ~/Library/Audio/Plug-Ins/VST3/  (Ableton, Cubase, Reaper, Bitwig...)" \
+                "K MASTER for macOS (Apple Silicon + Intel)" "" \
+                "1. Copy 'K MASTER.component' to ~/Library/Audio/Plug-Ins/Components/  (Logic, GarageBand)" \
+                "2. Copy 'K MASTER.vst3' to ~/Library/Audio/Plug-Ins/VST3/  (Ableton, Cubase, Reaper, Bitwig...)" \
                 "3. This build is not notarized. In Terminal run:" \
-                "   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/'AI Mix Assistant.component' ~/Library/Audio/Plug-Ins/VST3/'AI Mix Assistant.vst3'" \
+                "   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/'K MASTER.component' ~/Library/Audio/Plug-Ins/VST3/'K MASTER.vst3'" \
                 "4. Restart your DAW and rescan plug-ins." > "$OUT/INSTALL.txt"
               # Every binary must carry a native Apple Silicon slice as well as Intel.
               for b in "$OUT"/*.component/Contents/MacOS/* "$OUT"/*.vst3/Contents/MacOS/* "$OUT"/*.app/Contents/MacOS/*; do
@@ -81,34 +81,49 @@ jobs:
               # plug-ins load without any Terminal step.
               ROOT=pkgroot
               mkdir -p "$ROOT/Library/Audio/Plug-Ins/Components" "$ROOT/Library/Audio/Plug-Ins/VST3" "$ROOT/Applications"
-              ditto "$OUT/AI Mix Assistant.component" "$ROOT/Library/Audio/Plug-Ins/Components/AI Mix Assistant.component"
-              ditto "$OUT/AI Mix Assistant.vst3" "$ROOT/Library/Audio/Plug-Ins/VST3/AI Mix Assistant.vst3"
-              ditto "$OUT/AI Mix Assistant.app" "$ROOT/Applications/AI Mix Assistant.app"
+              ditto "$OUT/K MASTER.component" "$ROOT/Library/Audio/Plug-Ins/Components/K MASTER.component"
+              ditto "$OUT/K MASTER.vst3" "$ROOT/Library/Audio/Plug-Ins/VST3/K MASTER.vst3"
+              ditto "$OUT/K MASTER.app" "$ROOT/Applications/K MASTER.app"
               # Always install to these exact paths (never "relocate" onto an old copy elsewhere).
               pkgbuild --analyze --root "$ROOT" components.plist
               i=0; while [ $i -lt 10 ] && plutil -replace "$i.BundleIsRelocatable" -bool NO components.plist 2>/dev/null; do i=$((i+1)); done
               plutil -p components.plist
               mkdir -p scripts
-              printf '%s\n' '#!/bin/sh' 'killall -9 AudioComponentRegistrar 2>/dev/null || true' 'exit 0' > scripts/postinstall
+              # The plugin used to be called "AI Mix Assistant". Remove those copies so
+              # the DAW doesn't list it twice (same plugin IDs, so sessions still load).
+              cat > scripts/postinstall <<'SH'
+          #!/bin/sh
+          for d in /Library/Audio/Plug-Ins /Users/*/Library/Audio/Plug-Ins; do
+            rm -rf "$d/Components/AI Mix Assistant.component" "$d/VST3/AI Mix Assistant.vst3"
+          done
+          rm -rf "/Applications/AI Mix Assistant.app"
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          exit 0
+          SH
+              cat scripts/postinstall
               chmod +x scripts/postinstall
               pkgbuild --root "$ROOT" --component-plist components.plist --scripts scripts \
                 --identifier com.kalprod.aimixassistant --version "1.0.${{ github.run_number }}" \
                 --install-location / plugins.pkg
-              productbuild --package plugins.pkg AIMixAssistant-macOS.pkg
+              # A distribution file only so the installer window says "K MASTER".
+              productbuild --synthesize --package plugins.pkg dist.xml
+              sed -i '' 's|\(<installer-gui-script[^>]*>\)|\1<title>K MASTER</title>|' dist.xml
+              grep -q "<title>K MASTER</title>" dist.xml
+              productbuild --distribution dist.xml --package-path . AIMixAssistant-macOS.pkg
               pkgutil --payload-files AIMixAssistant-macOS.pkg | grep -E "component$|vst3$|app$" ;;
             Windows)
               cp "$REL/Standalone/"*.exe "$OUT/"
               printf '%s\r\n' \
-                "AI Mix Assistant for Windows (64-bit)" "" \
-                '1. Copy the "AI Mix Assistant.vst3" folder to C:\Program Files\Common Files\VST3' \
+                "K MASTER for Windows (64-bit)" "" \
+                '1. Copy the "K MASTER.vst3" folder to C:\Program Files\Common Files\VST3' \
                 "2. Restart your DAW and rescan plug-ins." \
                 "If Windows SmartScreen warns about the standalone .exe, choose More info > Run anyway." > "$OUT/INSTALL.txt"
               7z a -tzip "$OUT.zip" "$OUT" > /dev/null ;;
             Linux)
               cp "$REL/Standalone/"* "$OUT/"
               printf '%s\n' \
-                "AI Mix Assistant for Linux (x86-64)" "" \
-                "1. Copy 'AI Mix Assistant.vst3' to ~/.vst3/" \
+                "K MASTER for Linux (x86-64)" "" \
+                "1. Copy 'K MASTER.vst3' to ~/.vst3/" \
                 "2. Needs libasound2, libfreetype6 and libfontconfig1." \
                 "3. Restart your DAW and rescan plug-ins." > "$OUT/INSTALL.txt"
               zip -qry "$OUT.zip" "$OUT" ;;
@@ -141,9 +156,10 @@ jobs:
           sw_vers; uname -m
           sudo installer -pkg AIMixAssistant-macOS.pkg -target /
           P=/Library/Audio/Plug-Ins
-          codesign --verify --deep --strict "$P/Components/AI Mix Assistant.component"
-          codesign --verify --deep --strict "$P/VST3/AI Mix Assistant.vst3"
-          codesign --verify --deep --strict "/Applications/AI Mix Assistant.app"
+          codesign --verify --deep --strict "$P/Components/K MASTER.component"
+          codesign --verify --deep --strict "$P/VST3/K MASTER.vst3"
+          codesign --verify --deep --strict "/Applications/K MASTER.app"
+          test ! -e "$P/VST3/AI Mix Assistant.vst3"
           killall -9 AudioComponentRegistrar || true
       - name: auval (AU, native arm64)
         run: auval -v aufx Aima Aimx
@@ -151,11 +167,11 @@ jobs:
         run: |
           curl -sSLo pv.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip && unzip -q pv.zip
           PV=pluginval.app/Contents/MacOS/pluginval
-          $PV --strictness-level 10 --validate-in-process "/Library/Audio/Plug-Ins/VST3/AI Mix Assistant.vst3"
-          $PV --strictness-level 10 --validate-in-process "/Library/Audio/Plug-Ins/Components/AI Mix Assistant.component"
+          $PV --strictness-level 10 --validate-in-process "/Library/Audio/Plug-Ins/VST3/K MASTER.vst3"
+          $PV --strictness-level 10 --validate-in-process "/Library/Audio/Plug-Ins/Components/K MASTER.component"
       - name: Standalone launches
         run: |
-          "/Applications/AI Mix Assistant.app/Contents/MacOS/AI Mix Assistant" & PID=$!
+          "/Applications/K MASTER.app/Contents/MacOS/K MASTER" & PID=$!
           sleep 10; kill -0 $PID && echo "still running after 10 s"; kill $PID
 
   # Direct download links (no zip from the Actions page) for builds of main

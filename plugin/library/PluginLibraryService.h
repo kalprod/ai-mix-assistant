@@ -8,13 +8,13 @@
 
 namespace aimix::library
 {
-// The scanned, tagged plugin list, shared by every AI Mix Assistant instance
+// The scanned, tagged plugin list, shared by every K MASTER instance
 // in the process (use through juce::SharedResourcePointer).
 //
 // Saved as JSON so later sessions open instantly:
-//   macOS    ~/Library/Application Support/AI Mix Assistant/plugin-library.json
-//   Windows  %APPDATA%\AI Mix Assistant\plugin-library.json
-//   Linux    ~/.config/AI Mix Assistant/plugin-library.json
+//   macOS    ~/Library/Application Support/K MASTER/plugin-library.json
+//   Windows  %APPDATA%\K MASTER\plugin-library.json
+//   Linux    ~/.config/K MASTER/plugin-library.json
 // A rescan keeps your own changes (favourites, tags you corrected).
 class PluginLibraryService final : private juce::Thread,
                                    private juce::AsyncUpdater

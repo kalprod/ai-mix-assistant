@@ -2,9 +2,11 @@
 
 namespace aimix::library
 {
-PluginLibraryService::PluginLibraryService() : juce::Thread ("AI Mix plugin scan")
+PluginLibraryService::PluginLibraryService() : juce::Thread ("K MASTER plugin scan")
 {
-    const auto file = libraryFile();
+    auto file = libraryFile();
+    if (! file.existsAsFile())   // saved before the rename
+        file = file.getParentDirectory().getSiblingFile ("AI Mix Assistant").getChildFile (file.getFileName());
     if (file.existsAsFile())
     {
         auto loaded = fromJson (juce::JSON::parse (file), &scannedAtMs);
@@ -90,7 +92,7 @@ juce::File PluginLibraryService::libraryFile()
    #if JUCE_MAC
     dir = dir.getChildFile ("Application Support");
    #endif
-    return dir.getChildFile ("AI Mix Assistant").getChildFile ("plugin-library.json");
+    return dir.getChildFile ("K MASTER").getChildFile ("plugin-library.json");
 }
 
 juce::var PluginLibraryService::toJson (const std::vector<PluginInfo>& list, int64_t scannedAt)
@@ -118,6 +120,10 @@ juce::var PluginLibraryService::toJson (const std::vector<PluginInfo>& list, int
         o->setProperty ("tagSource", juce::String (toString (p.tagSource)));
         o->setProperty ("confidence", p.tagConfidence);
         o->setProperty ("favourite", p.favourite);
+        juce::Array<juce::var> presets;
+        for (const auto& name : p.presets)
+            presets.add (juce::String (name));
+        o->setProperty ("presets", presets);
         items.add (juce::var (o));
     }
     auto* root = new juce::DynamicObject();
@@ -160,6 +166,9 @@ std::vector<PluginInfo> PluginLibraryService::fromJson (const juce::var& json, i
                     : source == "keywords" ? TagSource::Keywords : TagSource::Category;
         p.tagConfidence = (float) (double) o.getProperty ("confidence", 0.3);
         p.favourite = (bool) o.getProperty ("favourite", false);
+        if (auto* pr = o.getProperty ("presets", {}).getArray())
+            for (const auto& v : *pr)
+                p.presets.push_back (v.toString().toStdString());
         if (! p.id.empty() && ! p.name.empty())
             out.push_back (std::move (p));
     }

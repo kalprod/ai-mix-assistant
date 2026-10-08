@@ -21,11 +21,11 @@ if (AIMIX_AAX_SDK_PATH)
 endif()
 
 juce_add_plugin (AIMixAssistant
-    COMPANY_NAME                 "AIMix"
+    COMPANY_NAME                 "KAL"
     BUNDLE_ID                    "com.aimix.mixassistant"
     PLUGIN_MANUFACTURER_CODE     Aimx
     PLUGIN_CODE                  Aima
-    PRODUCT_NAME                 "AI Mix Assistant"
+    PRODUCT_NAME                 "K MASTER"
     FORMATS                      ${AIMIX_FORMATS}
     IS_SYNTH                     FALSE
     NEEDS_MIDI_INPUT             FALSE
@@ -42,7 +42,8 @@ set (AIMIX_UI_SOURCES
     plugin/ui/DiagnosticCards.cpp
     plugin/ui/MasterView.cpp
     plugin/ui/ListenerView.cpp
-    plugin/ui/ChainPanel.cpp)
+    plugin/ui/ChainPanel.cpp
+    plugin/ui/StylePicker.cpp)
 
 set (AIMIX_LIBRARY_SOURCES
     plugin/library/PluginScanner.cpp

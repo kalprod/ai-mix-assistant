@@ -65,7 +65,10 @@ struct alignas (64) BusHeader
     uint64_t layoutSize;
     std::atomic<uint32_t> masterToken;    // 0 = no master engine
     std::atomic<uint64_t> masterHeartbeatMs;
+    std::atomic<uint32_t> mixStyle;       // written by the Master Engine: MixStyle::pack(), 0 = not chosen
+    std::atomic<uint32_t> requestedStyle; // a Listener's pick for the Master to adopt: (sequence << 16) | MixStyle::pack()
 };
+static_assert (sizeof (BusHeader) == 64, "BusHeader must stay one cache line");
 
 struct SharedBusLayout
 {

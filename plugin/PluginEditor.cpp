@@ -59,12 +59,62 @@ AIMixEditor::AIMixEditor (AIMixProcessor& p) : AudioProcessorEditor (&p), proces
     }
     pushLibrary();
 
+    styleButton.setColour (juce::TextButton::buttonColourId, colours::amber);
+    styleButton.setColour (juce::TextButton::textColourOffId, colours::amberText);
+    styleButton.setTooltip ("The genre and style the mix is judged against");
+    styleButton.onClick = [this] { showStylePicker (true); };
+    addAndMakeVisible (styleButton);
+
+    addChildComponent (stylePicker);
+    stylePicker.onChosen = [this] (aimix::MixStyle chosen)
+    {
+        processor.chooseStyle (chosen);
+        showStylePicker (false);
+        updateStyle();
+    };
+    stylePicker.onSkip = [this] { pickerSkipped = true; showStylePicker (false); };
+
     setResizable (true, true);
     setResizeLimits (960, 620, 2600, 1700);
     setSize (1400, 900);
 
     updateModeVisibility();
+    updateStyle();
     startTimerHz (30);
+}
+
+void AIMixEditor::showStylePicker (bool show)
+{
+    if (show)
+    {
+        const auto current = processor.getEffectiveStyle();
+        stylePicker.setStyle (current.isSet() ? current : aimix::MixStyle {});
+        stylePicker.toFront (false);
+    }
+    stylePicker.setVisible (show);
+}
+
+void AIMixEditor::updateStyleButtonText()
+{
+    const bool roomy = styleButton.getWidth() >= 200;
+    styleButton.setButtonText (shownStyle.isSet() ? juce::String (aimix::styleName (shownStyle)) + (roomy ? "  |  Change" : "")
+                                                  : juce::String ("Choose genre"));
+}
+
+// Follows the chosen genre/style: header button, loudness target, chain picks.
+// Before one is chosen the picker covers the window.
+void AIMixEditor::updateStyle()
+{
+    const auto style = processor.getEffectiveStyle();
+    if (style != shownStyle || styleButton.getButtonText().isEmpty())
+    {
+        shownStyle = style;
+        updateStyleButtonText();
+        masterView.setTargetLufs (aimix::profileFor (style).targetLufs);
+        updateChainContext();
+    }
+    if (! style.isSet() && ! pickerSkipped && ! stylePicker.isVisible())
+        showStylePicker (true);
 }
 
 AIMixEditor::~AIMixEditor()
@@ -139,6 +189,7 @@ void AIMixEditor::updateChainContext()
         }
         ctx.master = true;
         ctx.role = aimix::TrackRole::MasterBus;
+        ctx.style = processor.getEffectiveStyle();
         masterView.getChainPanel().setContext (ctx);
         return;
     }
@@ -152,6 +203,7 @@ void AIMixEditor::updateChainContext()
     // Round so the suggestion text doesn't flicker with every meter update.
     ctx.crestDb = std::round (peak - rms);
     ctx.sideToMidDb = m.sideToMidDb.load();
+    ctx.style = processor.getEffectiveStyle();
     listenerView.getChainPanel().setContext (ctx);
 }
 
@@ -190,7 +242,10 @@ void AIMixEditor::timerCallback()
 
     // The chain only changes with the role or big changes in the sound.
     if (++chainTick % 15 == 0)
+    {
+        updateStyle();
         updateChainContext();
+    }
 }
 
 void AIMixEditor::paint (juce::Graphics& g)
@@ -205,7 +260,7 @@ void AIMixEditor::paint (juce::Graphics& g)
 
     // Logo with a black-to-red underline, like the badge on the hardware.
     const auto logoFont = font (22.0f, true);
-    const juce::String logo ("AI MIX ASSISTANT");
+    const juce::String logo ("K MASTER");
     const float logoW = juce::GlyphArrangement::getStringWidth (logoFont, logo);
     g.setColour (colours::text);
     g.setFont (logoFont);
@@ -217,7 +272,7 @@ void AIMixEditor::paint (juce::Graphics& g)
     // Small dark display with what this instance is doing.
     const bool master = shownMode == AIMixProcessor::Mode::Master;
     auto display = juce::Rectangle<float> (logoW + 44.0f, 14.0f, 230.0f, 34.0f);
-    if (display.getRight() < (float) modeLabel.getX() - 8.0f)
+    if (display.getRight() < (float) styleButton.getX() - 8.0f)
     {
         g.setColour (colours::screen);
         g.fillRoundedRectangle (display, 6.0f);
@@ -241,8 +296,12 @@ void AIMixEditor::resized()
     header.removeFromRight (8);
     modeBox.setBounds (header.removeFromRight (150));
     modeLabel.setBounds (header.removeFromRight (52));
+    header.removeFromRight (14);
+    styleButton.setBounds (header.removeFromRight (juce::jlimit (130, 230, header.getWidth() - 130)));
+    updateStyleButtonText();
 
     auto body = r.reduced (20, 16);
     listenerView.setBounds (body);
     masterView.setBounds (body);
+    stylePicker.setBounds (getLocalBounds().withTrimmedTop (kHeaderHeight));
 }

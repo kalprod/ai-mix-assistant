@@ -47,7 +47,7 @@ float powerDb (double p) { return (float) (10.0 * std::log10 (p + 1.0e-12)); }
 }
 
 MixEngine::MixEngine (std::shared_ptr<SharedBus> b, RuleConfig config)
-    : bus (std::move (b)), token (randomToken()), rules (withWorkflowTips (config))
+    : bus (std::move (b)), token (randomToken()), baseConfig (config), rules (withWorkflowTips (config))
 {
     latest = std::make_shared<MixReport>();
 }
@@ -302,11 +302,20 @@ void MixEngine::tick (uint64_t nowMs)
 
     isMaster = bus != nullptr && bus->tryBecomeMaster (token, nowMs);
     report->isActiveMaster = isMaster;
+    report->style = MixStyle::unpack (wantedStyle.load());
 
     if (isMaster)
     {
         bus->heartbeatMaster (token, nowMs);
         drain (nowMs);
+
+        const auto style = wantedStyle.load();
+        if (style != appliedStyle)
+        {
+            rules = RuleEngine (withWorkflowTips (applyStyle (baseConfig, MixStyle::unpack (style))));
+            appliedStyle = style;
+        }
+        bus->layout().header.mixStyle.store (style, std::memory_order_relaxed);
 
         {
             std::lock_guard<std::mutex> lock (dismissLock);

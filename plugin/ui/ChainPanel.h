@@ -66,6 +66,7 @@ private:
     ChainContext context;
     bool hasContext = false;
     ChainRecommendation rec;
+    MixStyle styleShown;
     juce::String status;
     Daw daw;
     juce::StringArray addedKeys;
